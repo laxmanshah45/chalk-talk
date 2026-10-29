@@ -2,3 +2,6 @@
 .env
 node_modules/
 .DS_Store
+
+# Lessons you generate are saved here (pictures, outlines, narration)
+lessons/

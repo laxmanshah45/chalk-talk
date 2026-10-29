@@ -1,13 +1,20 @@
 {
   "name": "chalk-talk",
-  "version": "0.1.0",
-  "description": "An animated AI tutor that draws and talks through lessons, built on Meta Model API.",
+  "version": "0.2.0",
+  "description": "An animated AI tutor that paints, traces and talks through lessons, built on Meta Model API.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.17"
+  },
+  "dependencies": {
+    "@meta-sam/parser": "^0.1.0",
+    "roughjs": "^4.6.6"
+  },
+  "optionalDependencies": {
+    "kokoro-js": "^1.2.1"
   },
   "license": "MIT"
 }

@@ -1,7 +1,7 @@
 // Chalk Talk server
 // Serves the lesson player and talks to Meta Model API for you,
 // so your API key stays on your computer and never reaches the browser.
-// Needs Node.js 18 or newer. No npm install required.
+// Needs Node.js 20.17 or newer. Run npm install once, then npm start.
 
 const http = require("http");
 const fs = require("fs");
@@ -9,11 +9,16 @@ const path = require("path");
 
 loadEnv(path.join(__dirname, ".env"));
 
+const meta = require("./lib/meta");
+const voice = require("./lib/voice");
+const { buildLesson, listLessons } = require("./lib/lesson");
+const ask = require("./lib/ask");
+
 const PORT = Number(process.env.PORT) || 3000;
-const API_KEY = process.env.MODEL_API_KEY;
-const BASE_URL = (process.env.META_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
-const MODEL = process.env.MODEL || "muse-spark-1.3";
 const PUBLIC_DIR = path.join(__dirname, "public");
+const LESSONS_DIR = path.join(__dirname, "lessons");
+const ANSWERS_DIR = path.join(LESSONS_DIR, "_answers");
+const ROUGH_JS = path.join(__dirname, "node_modules", "roughjs", "bundled", "rough.js");
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -23,59 +28,41 @@ const TYPES = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".svg": "image/svg+xml",
+  ".wav": "audio/wav",
 };
-
-// The instructions Muse Spark gets for every lesson.
-// Tweak this to change the tutor's style, length, or age group.
-const LESSON_PROMPT = `You are a warm, clear tutor who writes short animated lessons for students.
-Return ONLY a JSON object. No markdown fences, no text before or after it. Use exactly this shape:
-{
-  "title": "short lesson title",
-  "scenes": [
-    {
-      "heading": "3 to 6 word scene heading",
-      "narration": "2 or 3 short spoken sentences, about 40 words in total",
-      "visuals": [
-        { "label": "1 to 3 words", "note": "under 8 words", "trigger": "one word copied from this scene's narration" }
-      ]
-    }
-  ],
-  "quiz": {
-    "question": "one question that checks understanding",
-    "choices": ["choice", "choice", "choice"],
-    "answer": 0,
-    "explain": "one sentence explaining the right answer"
-  }
-}
-Rules:
-- Write 4 to 6 scenes. Scene 1 hooks curiosity with an everyday example. The last scene recaps why it matters.
-- Give each scene 2 to 4 visuals. Each trigger must be a single word that appears in that scene's narration, and the visuals must be listed in the order their trigger words are spoken.
-- The narration is read aloud by a computer voice: use plain words, no symbols, no lists, no emoji, no abbreviations.
-- "answer" is the index of the correct choice, starting at 0.
-- Match the vocabulary to the student's level.`;
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "POST" && req.url === "/api/lesson") return await handleLesson(req, res);
-    if (req.method === "GET") return serveStatic(req, res);
+    const url = new URL(req.url, "http://localhost");
+    if (req.method === "POST" && url.pathname === "/api/lesson") return await handleLesson(req, res);
+    if (req.method === "POST" && url.pathname === "/api/ask") return await handleAsk(req, res);
+    if (req.method === "POST" && url.pathname === "/api/say") return await handleSay(req, res);
+    if (req.method === "GET" && url.pathname === "/api/lessons") return sendJson(res, 200, { lessons: listLessons(LESSONS_DIR) });
+    if (req.method === "GET" && url.pathname === "/api/config") return await handleConfig(res);
+    if (req.method === "GET" && url.pathname === "/vendor/rough.js") return sendFile(res, ROUGH_JS);
+    if (req.method === "GET" && url.pathname.startsWith("/lessons/")) return serveFrom(LESSONS_DIR, url.pathname.slice("/lessons".length), res);
+    if (req.method === "GET") return serveFrom(PUBLIC_DIR, url.pathname === "/" ? "/index.html" : url.pathname, res);
     sendJson(res, 405, { error: "Method not allowed." });
   } catch (err) {
     console.error(err);
-    sendJson(res, 500, { error: "Something broke on the server. Check the terminal for details." });
+    if (!res.headersSent) sendJson(res, 500, { error: "Something broke on the server. Check the terminal for details." });
+    else res.end();
   }
 });
 
 server.listen(PORT, () => {
   console.log(`Chalk Talk is running at http://localhost:${PORT}`);
-  console.log(API_KEY ? `Using model ${MODEL}` : "No API key yet: the sample lesson works, but Make lesson needs MODEL_API_KEY in .env");
+  console.log(meta.hasKey() ? `Using ${meta.MODEL}, ${meta.IMAGE_MODEL}, ${meta.SAM_MODEL} and ${meta.TRANSCRIBE_MODEL}` : "No API key yet: the sample lesson works, but Make lesson needs MODEL_API_KEY in .env");
+  voice.warmUp();
+  ask.tidyAnswers(ANSWERS_DIR);
 });
 
+const NO_KEY = "No API key found. Copy .env.example to .env, paste your Meta Model API key after MODEL_API_KEY=, then restart with npm start.";
+
+// Streams the lesson as it's built, one JSON object per line, so the page can
+// show each step and start playing scene 1 before the last scene is ready.
 async function handleLesson(req, res) {
-  if (!API_KEY) {
-    return sendJson(res, 500, {
-      error: "No API key found. Copy .env.example to .env, paste your Meta Model API key after MODEL_API_KEY=, then restart with npm start.",
-    });
-  }
+  if (!meta.hasKey()) return sendJson(res, 500, { error: NO_KEY });
 
   let body;
   try {
@@ -83,95 +70,110 @@ async function handleLesson(req, res) {
   } catch {
     return sendJson(res, 400, { error: "The request wasn't valid JSON." });
   }
-
   const topic = String(body.topic || "").trim().slice(0, 300);
   const level = String(body.level || "middle school").trim().slice(0, 60);
   if (!topic) return sendJson(res, 400, { error: "Type a topic first." });
 
-  const payload = {
-    model: MODEL,
-    messages: [
-      { role: "system", content: LESSON_PROMPT },
-      { role: "user", content: `Student level: ${level}\nTopic: ${topic}` },
-    ],
+  res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
+  const emit = (event) => { if (!res.destroyed) res.write(JSON.stringify(event) + "\n"); };
+  try {
+    const lesson = await buildLesson({ topic, level, lessonsDir: LESSONS_DIR, emit });
+    console.log(`Lesson ready: "${lesson.title}" (${lesson.scenes.length} scenes) in lessons/${lesson.id}`);
+  } catch (err) {
+    console.error("Couldn't build the lesson:", err.message);
+    emit({ type: "error", error: err instanceof meta.MetaError ? err.message : "Muse Spark answered, but not in the lesson format. Try again or reword the topic." });
+  }
+  res.end();
+}
+
+// A raised hand: { audio: base64 WAV } or { question: text }, plus the lesson context.
+async function handleAsk(req, res) {
+  if (!meta.hasKey()) return sendJson(res, 500, { error: NO_KEY });
+
+  let body;
+  try {
+    body = JSON.parse(await readBody(req, 8e6));
+  } catch {
+    return sendJson(res, 400, { error: "The request wasn't valid JSON." });
+  }
+
+  let question = String(body.question || "").trim().slice(0, 500);
+  if (!question && body.audio) {
+    try {
+      question = (await ask.transcribe(Buffer.from(String(body.audio), "base64"))).slice(0, 500);
+    } catch (err) {
+      console.error("Transcribe:", err.message);
+      return sendJson(res, 502, { error: `Couldn't hear that: ${err.message}` });
+    }
+    if (!question) return sendJson(res, 200, { question: "", answer: "", point: [], speech: null, heard: false });
+  }
+  if (!question) return sendJson(res, 400, { error: "Ask a question first." });
+
+  const c = body.context || {};
+  const context = {
+    title: String(c.title || "").slice(0, 120),
+    level: String(c.level || "").slice(0, 60),
+    heading: String(c.heading || "").slice(0, 120),
+    narration: String(c.narration || "").slice(0, 800),
+    labels: (Array.isArray(c.labels) ? c.labels : []).map((l) => String(l).slice(0, 40)).slice(0, 6),
   };
-  if (process.env.REASONING_EFFORT) payload.reasoning_effort = process.env.REASONING_EFFORT;
-
-  let apiRes;
+  const image = localMedia(String(body.image || ""));
   try {
-    apiRes = await fetch(`${BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
-      body: JSON.stringify(payload),
-    });
+    const reply = await ask.answer({ question, context, image, answersDir: ANSWERS_DIR });
+    console.log(`Answered: "${question}"`);
+    sendJson(res, 200, reply);
   } catch (err) {
-    return sendJson(res, 502, { error: `Couldn't reach Meta Model API: ${err.message}` });
+    console.error("Couldn't answer:", err.message);
+    sendJson(res, 502, { error: err instanceof meta.MetaError ? err.message : "Muse Spark couldn't answer that one. Try asking another way." });
   }
+}
 
-  const data = await apiRes.json().catch(() => ({}));
-  if (!apiRes.ok) {
-    const detail = data?.error?.message || JSON.stringify(data).slice(0, 300);
-    console.error("Meta API error", apiRes.status, detail);
-    return sendJson(res, 502, { error: `Meta Model API returned ${apiRes.status}: ${detail}` });
-  }
-
+// Speak a short line (quiz question or feedback) in the narration voice. Works without an API key.
+const sayCache = new Map();
+async function handleSay(req, res) {
+  let text;
   try {
-    const lesson = cleanLesson(parseJson(messageText(data)));
-    console.log(`Lesson ready: "${lesson.title}" (${lesson.scenes.length} scenes)`);
-    sendJson(res, 200, lesson);
+    text = String(JSON.parse(await readBody(req)).text || "").trim().slice(0, 400);
+  } catch {
+    return sendJson(res, 400, { error: "The request wasn't valid JSON." });
+  }
+  if (!text) return sendJson(res, 400, { error: "Nothing to say." });
+  if (!(await voice.available())) return sendJson(res, 503, { error: "The server voice isn't available." });
+  try {
+    if (!sayCache.has(text)) {
+      if (sayCache.size >= 40) sayCache.delete(sayCache.keys().next().value);
+      sayCache.set(text, (await voice.speak(text)).wav);
+    }
+    res.writeHead(200, { "Content-Type": "audio/wav" });
+    res.end(sayCache.get(text));
   } catch (err) {
-    console.error("Couldn't read the lesson:", err.message);
-    sendJson(res, 502, { error: "Muse Spark answered, but not in the lesson format. Try again or reword the topic." });
+    console.error("Say:", err.message);
+    sendJson(res, 500, { error: "Couldn't speak that." });
   }
 }
 
-// Pull the text out of a chat completion, whether content is a string or a list of parts.
-function messageText(data) {
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((p) => p.text || "").join("");
-  throw new Error("No message content in the response");
+async function handleConfig(res) {
+  sendJson(res, 200, { hasKey: meta.hasKey(), voice: (await voice.available()) ? voice.VOICE : null });
 }
 
-// Models sometimes wrap JSON in ``` fences or add a sentence around it.
-function parseJson(text) {
-  const stripped = text.replace(/```json|```/g, "").trim();
-  const first = stripped.indexOf("{");
-  const last = stripped.lastIndexOf("}");
-  if (first === -1 || last === -1) throw new Error("No JSON object found");
-  return JSON.parse(stripped.slice(first, last + 1));
+// Map a page URL like /lessons/x/scene-1.jpg or /samples/x/scene-1.jpg to a file on disk.
+function localMedia(urlPath) {
+  const p = urlPath.split("?")[0];
+  const base = p.startsWith("/lessons/") ? LESSONS_DIR : PUBLIC_DIR;
+  const rel = p.startsWith("/lessons/") ? p.slice("/lessons".length) : p;
+  const file = path.normalize(path.join(base, decodeURIComponent(rel)));
+  return file.startsWith(base + path.sep) && /\.(jpe?g|png)$/i.test(file) ? file : null;
 }
 
-// Make sure the lesson has the fields the player expects, and drop anything broken.
-function cleanLesson(raw) {
-  const str = (v, max) => String(v ?? "").trim().slice(0, max);
-  const scenes = (Array.isArray(raw?.scenes) ? raw.scenes : [])
-    .map((s) => ({
-      heading: str(s?.heading, 80),
-      narration: str(s?.narration, 600),
-      visuals: (Array.isArray(s?.visuals) ? s.visuals : [])
-        .slice(0, 5)
-        .map((v) => ({ label: str(v?.label, 40), note: str(v?.note, 80), trigger: str(v?.trigger, 40) }))
-        .filter((v) => v.label),
-    }))
-    .filter((s) => s.narration)
-    .slice(0, 8);
-  if (!scenes.length) throw new Error("Lesson has no scenes");
-
-  const lesson = { title: str(raw?.title, 100) || "Your lesson", scenes };
-  const q = raw?.quiz;
-  if (q && Array.isArray(q.choices) && q.choices.length >= 2) {
-    const choices = q.choices.slice(0, 4).map((c) => str(c, 120));
-    const answer = Number.isInteger(q.answer) && q.answer >= 0 && q.answer < choices.length ? q.answer : 0;
-    lesson.quiz = { question: str(q.question, 200), choices, answer, explain: str(q.explain, 300) };
-  }
-  return lesson;
+function serveFrom(root, urlPath, res) {
+  let rel;
+  try { rel = decodeURIComponent(urlPath); } catch { return sendJson(res, 400, { error: "Bad path" }); }
+  const file = path.normalize(path.join(root, rel));
+  if (!file.startsWith(root + path.sep)) return sendJson(res, 403, { error: "Forbidden" });
+  sendFile(res, file);
 }
 
-function serveStatic(req, res) {
-  const urlPath = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-  const file = path.normalize(path.join(PUBLIC_DIR, urlPath === "/" ? "index.html" : urlPath));
-  if (!file.startsWith(PUBLIC_DIR)) return sendJson(res, 403, { error: "Forbidden" });
+function sendFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) return sendJson(res, 404, { error: "Not found" });
     res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
@@ -179,13 +181,13 @@ function serveStatic(req, res) {
   });
 }
 
-function readBody(req) {
+function readBody(req, limit = 1e6) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on("data", (c) => {
       size += c.length;
-      if (size > 1e6) {
+      if (size > limit) {
         reject(new Error("Body too large"));
         req.destroy();
       } else chunks.push(c);
@@ -200,7 +202,7 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// Minimal .env reader so the project needs no packages.
+// Minimal .env reader so the key never needs to be pasted into code.
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
   for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {

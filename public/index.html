@@ -12,7 +12,7 @@
 <body>
   <header class="top">
     <h1 class="brand">Chalk Talk</h1>
-    <p class="tagline">Type a topic. Get a lesson that draws itself and talks you through it.</p>
+    <p class="tagline">Type a topic. Watch it get painted, traced and explained on a chalkboard, and raise your hand any time to ask a question.</p>
   </header>
 
   <form id="topic-form" class="ask">
@@ -28,7 +28,10 @@
       <button id="make" type="submit" class="primary">Make lesson</button>
     </div>
     <p id="ask-error" class="ask-error" role="alert"></p>
-    <button id="sample" type="button" class="link">Play the sample lesson instead</button>
+    <div class="library">
+      <button id="sample" type="button" class="link">Play the sample lesson</button>
+      <div id="saved" class="saved" aria-label="Your lessons"></div>
+    </div>
   </form>
 
   <main class="stage">
@@ -36,38 +39,56 @@
 
     <div class="frame">
       <div id="board" class="board">
-        <h2 id="scene-heading" class="chalk heading">Your lesson appears here</h2>
-        <!-- Each visual is a chalk card for now. Later: swap in a Muse Image picture with SAM 3.1 cutouts. -->
+        <!-- The scene picture: painted by Muse Image, parts traced from SAM 3.1 outlines. -->
+        <svg id="picture" class="picture" hidden aria-hidden="true"></svg>
+        <!-- Chalk cards, used when a scene has no picture. -->
         <div id="visuals" class="visuals"></div>
+        <h2 id="scene-heading" class="chalk heading">Your lesson appears here</h2>
+        <!-- Shows each Meta model's step while a new lesson is being made. -->
+        <div id="build" class="build" hidden></div>
         <p id="board-status" class="chalk status">Pick a topic above, or play the sample lesson.</p>
+        <div id="wipe" class="wipe" aria-hidden="true"></div>
       </div>
     </div>
 
-    <p id="caption" class="caption"></p>
+    <p id="caption" class="caption" aria-live="off"></p>
 
     <div class="controls">
       <button id="prev" type="button" disabled>Back</button>
       <button id="play" type="button" class="primary" disabled>Play</button>
       <button id="next" type="button" disabled>Next</button>
       <button id="replay" type="button" disabled>Replay scene</button>
+      <button id="hand" type="button" class="hand" disabled aria-pressed="false"><span aria-hidden="true">✋</span> Raise hand</button>
       <div id="dots" class="dots" role="group" aria-label="Scenes"></div>
     </div>
+
+    <!-- Raise your hand: speak (Muse Voice Transcribe) or type, and Muse Spark answers on the board. -->
+    <section id="hand-panel" class="hand-panel" hidden aria-live="polite">
+      <p id="hand-status" class="hand-status"></p>
+      <form id="hand-form" class="hand-form">
+        <input id="hand-text" type="text" autocomplete="off" maxlength="300" placeholder="Or type your question" aria-label="Your question">
+        <button type="submit">Ask</button>
+        <button id="hand-close" type="button" class="link">Back to the lesson</button>
+      </form>
+    </section>
 
     <section id="quiz" class="quiz" hidden></section>
 
     <details class="settings">
       <summary>Voice settings</summary>
-      <div class="settings-row">
+      <p id="voice-note" class="voice-note"></p>
+      <div class="settings-row" id="browser-voice-row">
         <label for="voice">Voice</label>
         <select id="voice"></select>
       </div>
       <div class="settings-row">
         <label for="rate">Speed</label>
-        <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="0.95">
+        <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1">
       </div>
     </details>
   </main>
 
+  <script src="/vendor/rough.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
