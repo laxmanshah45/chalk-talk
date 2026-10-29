@@ -41,6 +41,7 @@ let building = false;
 let buildToken = 0;     // bumps when a different lesson is opened, so a running build stops driving the player
 let started = false;
 let finishClip = null;  // resolves the clip that's playing, so stop() never leaves it hanging
+let finding = null;     // the "Find it" round after the last scene: { rounds, at, score, round, locked }
 
 // ---------- Startup ----------
 
@@ -53,6 +54,19 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
 }).catch(() => {});
 document.fonts?.load('64px "Patrick Hand"');
 refreshSaved();
+
+// Quick start guide: open on the first visit, remember once it's dismissed.
+const howto = $("#howto");
+const HOWTO_SEEN = "chalk-talk-howto-seen";
+try { if (!localStorage.getItem(HOWTO_SEEN)) howto.hidden = false; } catch { howto.hidden = false; }
+$("#howto-open").addEventListener("click", () => {
+  howto.hidden = !howto.hidden;
+  if (!howto.hidden) howto.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
+});
+$("#howto-close").addEventListener("click", () => {
+  howto.hidden = true;
+  try { localStorage.setItem(HOWTO_SEEN, "1"); } catch {}
+});
 
 // ---------- Making a new lesson ----------
 
@@ -124,6 +138,11 @@ function onBuildEvent(ev) {
     updateTitle();
     if (!started && ev.index === 0) startLesson();
     else if (waitingFor === ev.index) { waitingFor = -1; renderScene(ev.index); play(); }
+  } else if (ev.type === "done") {
+    lesson.cost = ev.cost;
+    lesson.seconds = ev.seconds;
+    building = false;
+    updateTitle();
   }
 }
 
@@ -155,26 +174,55 @@ function startLesson() {
 
 // ---------- Saved lessons ----------
 
+// The lesson gallery: the sample first, then lessons you've made, newest first.
 async function refreshSaved() {
   const data = await fetch("/api/lessons").then((r) => r.json()).catch(() => null);
   els.saved.innerHTML = "";
-  for (const item of (data?.lessons || []).slice(0, 8)) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "saved-item";
-    if (item.thumb) {
-      const img = document.createElement("img");
-      img.src = item.thumb;
-      img.alt = "";
-      img.loading = "lazy";
-      b.append(img);
-    }
-    const span = document.createElement("span");
-    span.textContent = item.title;
-    b.append(span);
-    b.addEventListener("click", () => openLesson(`/lessons/${item.id}/`));
-    els.saved.append(b);
+  els.saved.append(lessonCard({ title: "How Volcanoes Erupt", thumb: `${SAMPLE}scene-4.jpg`, meta: "Works without an API key", folder: SAMPLE, sample: true }));
+  for (const item of (data?.lessons || []).slice(0, 12)) {
+    const when = item.createdAt ? new Date(item.createdAt) : null;
+    const meta = [item.scenes ? `${item.scenes} scenes` : "", when ? when.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""].filter(Boolean).join(" · ");
+    els.saved.append(lessonCard({ title: item.title, thumb: item.thumb, meta, folder: `/lessons/${item.id}/` }));
   }
+}
+
+function lessonCard({ title, thumb, meta, folder, sample }) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lesson-card" + (sample ? " sample" : "");
+  const pic = document.createElement("span");
+  pic.className = "lesson-card-pic";
+  if (thumb) {
+    const img = document.createElement("img");
+    img.src = thumb;
+    img.alt = "";
+    img.loading = "lazy";
+    pic.append(img);
+  }
+  if (sample) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "Sample";
+    pic.append(badge);
+  }
+  const t = document.createElement("span");
+  t.className = "lesson-card-title";
+  t.textContent = title;
+  const m = document.createElement("span");
+  m.className = "lesson-card-meta";
+  m.textContent = meta;
+  b.append(pic, t, m);
+  b.addEventListener("click", () => openLesson(folder));
+  return b;
+}
+
+// "Try" ideas fill in the topic box; Make lesson is still one click away, so nothing is spent by accident.
+for (const idea of document.querySelectorAll(".idea")) {
+  idea.addEventListener("click", () => {
+    els.topic.value = idea.textContent;
+    els.askError.textContent = "";
+    els.make.focus();
+  });
 }
 
 async function openLesson(folder) {
@@ -230,9 +278,17 @@ function preload(i) {
 }
 
 function updateTitle() {
-  if (!lesson) { els.title.textContent = ""; return; }
+  els.title.textContent = "";
+  if (!lesson) return;
   const left = ready.filter((r) => !r).length;
-  els.title.textContent = building && left && started ? `${lesson.title} · still making ${left} scene${left > 1 ? "s" : ""}…` : lesson.title;
+  const note = document.createElement("span");
+  note.className = "title-note";
+  if (building && left && started) note.textContent = `still making ${left} scene${left > 1 ? "s" : ""}…`;
+  else if (lesson.cost && lesson.seconds) {
+    const cents = lesson.cost.usd * 100;
+    note.textContent = `made in ${Math.floor(lesson.seconds / 60)}:${String(lesson.seconds % 60).padStart(2, "0")} for about ${cents < 1 ? cents.toFixed(1) : Math.round(cents)}¢ of API credit`;
+  }
+  els.title.append(lesson.title, note);
 }
 
 // ---------- Build panel: each Meta model's step, live ----------
@@ -240,6 +296,7 @@ function updateTitle() {
 const STEP_TEXT = {
   waiting: "Waiting for the script",
   painting: "Muse Image is painting",
+  repainting: "Not clear enough, so Muse Image is repainting",
   painted: "Muse Spark is finding the parts",
   looking: "Muse Spark is finding the parts",
   tracing: "SAM 3.1 is tracing the outlines",
@@ -293,7 +350,7 @@ function buildScript() {
 
 // Light up whichever models are working right now, and tick off the ones that are done.
 function updatePipeline() {
-  const steps = [...els.build.querySelectorAll(".shot[data-step]")].map((s) => STEP_ORDER.indexOf(s.dataset.step));
+  const steps = [...els.build.querySelectorAll(".shot[data-step]")].map((s) => STEP_ORDER.indexOf(s.dataset.step === "repainting" ? "painting" : s.dataset.step));
   const all = (min) => steps.length > 0 && steps.every((r) => r >= min);
   const any = (lo, hi) => steps.some((r) => r >= lo && r <= hi);
   const state = {
@@ -312,12 +369,16 @@ function buildStep(i, step, src) {
   li.dataset.step = step;
   li.querySelector(".shot-step").textContent = STEP_TEXT[step] || step;
   updatePipeline();
-  if (src && !li.querySelector("img")) {
-    const img = document.createElement("img");
-    img.alt = "";
-    img.onload = () => img.classList.add("on");
+  if (src) {
+    // A repainted picture replaces the first one.
+    let img = li.querySelector("img");
+    if (!img) {
+      img = document.createElement("img");
+      img.alt = "";
+      img.onload = () => img.classList.add("on");
+      li.querySelector(".shot-img").append(img);
+    }
     img.src = media(src);
-    li.querySelector(".shot-img").append(img);
   }
 }
 
@@ -424,6 +485,7 @@ function wordAt(charIndex) {
 
 function clearBoard() {
   board = null;
+  els.sample.hidden = true; // the empty board's "Play the sample lesson" button is only for the first visit
   els.picture.toggleAttribute("hidden", true);
   els.picture.innerHTML = "";
   els.picture.classList.remove("on");
@@ -488,11 +550,6 @@ function drawPicture(scene) {
       <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="9" result="grain"/>
       <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.75" result="holes"/>
       <feComposite in="rough" in2="holes" operator="in"/>
-    </filter>
-    <filter id="${id}-dust" x="-5%" y="-5%" width="110%" height="110%">
-      <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="1" seed="2" result="grain"/>
-      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.45" result="holes"/>
-      <feComposite in="SourceGraphic" in2="holes" operator="in"/>
     </filter>`;
 
   svg("image", { href, width: W, height: H, class: "sketch", filter: `url(#${id}-sketch)` }, root);
@@ -520,13 +577,65 @@ function drawPicture(scene) {
   });
 
   requestAnimationFrame(() => root.classList.add("on"));
+
+  // A slow camera move toward the part being explained, and back out at the end of the scene.
+  let view = [0, 0, W, H];
+  let viewRun = 0;
+  const moveView = (to, ms) => {
+    const from = view.slice();
+    const run = ++viewRun;
+    tween(reduceMotion ? 0 : ms, (t) => {
+      if (run !== viewRun || board !== self) return;
+      const e = easeInOut(t);
+      view = from.map((v, i) => v + (to[i] - v) * e);
+      root.setAttribute("viewBox", view.map((v) => Math.round(v * 10) / 10).join(" "));
+    });
+  };
+  const focus = (k) => {
+    const box = shapes[k]?.box;
+    if (!box) return;
+    const [l, t, r, b] = box;
+    // Big parts already fill the board; keep the whole picture in view for them.
+    if (r - l > W * 0.7 || b - t > H * 0.7) { moveView([0, 0, W, H], 1600); return; }
+    const w = W * 0.82, h = H * 0.82;
+    // Lean toward the part rather than centring it, so the move stays gentle.
+    const fx = W / 2 + ((l + r) / 2 - W / 2) * 0.75, fy = H / 2 + ((t + b) / 2 - H / 2) * 0.75;
+    moveView([Math.max(0, Math.min(W - w, fx - w / 2)), Math.max(0, Math.min(H - h, fy - h / 2)), w, h], 1600);
+  };
+
   const self = {
     isRevealed: (k) => !!parts[k]?.revealed,
     reveal: (k) => revealPart(self, parts[k], tip),
-    activate: (k) => parts.forEach((p) => {
-      p.outline?.classList.toggle("active", p.k === k);
-      p.label?.group.classList.toggle("active", p.k === k);
-    }),
+    activate: (k) => {
+      parts.forEach((p) => {
+        p.outline?.classList.toggle("active", p.k === k);
+        p.label?.group.classList.toggle("active", p.k === k);
+      });
+      focus(k);
+    },
+    // "Find it": show the whole picture with no labels, and test where the student tapped.
+    showAll: () => full.classList.add("on"),
+    hitTest: (clientX, clientY, target) => {
+      const pt = root.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const p = pt.matrixTransform(root.getScreenCTM().inverse());
+      // Count taps just outside the target's outline too: fingers aren't precise.
+      const near = W * 0.015;
+      let k = shapes[target] && (insideShape(shapes[target], p.x, p.y) || distanceToShape(shapes[target], p.x, p.y) < near) ? target : -1;
+      if (k === -1) k = shapes.findIndex((s) => s && insideShape(s, p.x, p.y));
+      return { k, x: p.x, y: p.y };
+    },
+    miss: (x, y) => {
+      const s = W * 0.018;
+      const mark = svg("path", { d: `M${x - s} ${y - s}L${x + s} ${y + s}M${x + s} ${y - s}L${x - s} ${y + s}`, pathLength: 1, class: "miss" }, lineLayer);
+      tween(reduceMotion ? 0 : 300, (t) => { mark.style.strokeDashoffset = String(1 - t); });
+    },
+    answer: (k) => {
+      parts[k]?.outline?.classList.add("answer");
+      parts[k]?.label?.group.classList.add("answer");
+      revealPart(self, parts[k], tip);
+    },
     pulse: (k) => {
       const p = parts[k];
       if (!p) return;
@@ -542,9 +651,35 @@ function drawPicture(scene) {
       parts.forEach((p) => { if (!p.revealed) revealPart(self, p, tip, true); });
       full.classList.add("on");
       parts.forEach((p) => p.outline?.classList.add("rest"));
+      moveView([0, 0, W, H], 1800);
     },
   };
   return self;
+}
+
+// Even-odd point-in-polygon across all of a shape's contours (so holes stay holes).
+function insideShape(shape, x, y) {
+  let inside = false;
+  for (const c of shape.contours) {
+    for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+      const [xi, yi] = c[i], [xj, yj] = c[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function distanceToShape(shape, x, y) {
+  let best = Infinity;
+  for (const c of shape.contours) {
+    for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+      const [ax, ay] = c[j], [bx, by] = c[i];
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+    }
+  }
+  return best;
 }
 
 // Trace the outline with a moving chalk stick, colour the part in, then write its label.
@@ -838,7 +973,7 @@ async function play() {
   } else {
     playing = false;
     updateButtons();
-    showQuiz();
+    startFinding();
   }
 }
 
@@ -936,29 +1071,50 @@ function speakBrowser(part, myRun) {
   });
 }
 
-// Say a short line (quiz question or feedback) in the lesson's voice.
+// Say a short line (quiz question, "Find it" prompt or feedback) in the lesson's voice.
+// Resolves once it has been spoken, or cut off by something else.
+let sayToken = 0;
 async function say(text) {
   stopSound();
+  const token = sayToken;
   if (serverVoice) {
     try {
       const res = await fetch("/api/say", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      if (token !== sayToken) return;
       if (res.ok) {
-        player.src = URL.createObjectURL(await res.blob());
-        player.playbackRate = Number(els.rate.value) || 1;
-        await player.play();
+        const url = URL.createObjectURL(await res.blob());
+        if (token !== sayToken) return;
+        await new Promise((resolve) => {
+          const done = () => {
+            player.onended = player.onerror = null;
+            if (finishClip === done) finishClip = null;
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          finishClip = done;
+          player.onended = done;
+          player.onerror = done;
+          player.src = url;
+          player.playbackRate = Number(els.rate.value) || 1;
+          player.play().catch(done);
+        });
         return;
       }
     } catch {}
   }
-  if (!synth) return;
-  const u = new SpeechSynthesisUtterance(text);
-  const v = currentVoice();
-  if (v) u.voice = v;
-  u.rate = Number(els.rate.value) || 1;
-  synth.speak(u);
+  if (!synth || token !== sayToken) return;
+  await new Promise((resolve) => {
+    const u = new SpeechSynthesisUtterance(text);
+    const v = currentVoice();
+    if (v) u.voice = v;
+    u.rate = Number(els.rate.value) || 1;
+    u.onend = u.onerror = () => resolve();
+    synth.speak(u);
+  });
 }
 
 function stopSound() {
+  sayToken++;
   if (synth) synth.cancel();
   player.pause();
   finishClip?.(true);
@@ -988,21 +1144,22 @@ els.play.addEventListener("click", () => {
   unlockAudio();
   if (!els.handPanel.hidden) { resumeAfter = true; backToLesson(); return; }
   if (playing) { stop(); return; }
-  if (sceneIndex === lesson.scenes.length - 1 && !els.quiz.hidden) {
-    hideQuiz();
-    sceneIndex = 0;
-    renderScene(0);
+  // At the end of the lesson, Play starts it again from the top.
+  if (finding || (sceneIndex === lesson.scenes.length - 1 && !els.quiz.hidden)) {
+    goTo(0);
+    return;
   }
   if (!board && ready[sceneIndex]) renderScene(sceneIndex);
   play();
 });
 els.prev.addEventListener("click", () => goTo(sceneIndex - 1));
-els.next.addEventListener("click", () => goTo(sceneIndex + 1));
+els.next.addEventListener("click", () => (finding ? skipRound() : goTo(sceneIndex + 1)));
 els.replay.addEventListener("click", () => goTo(sceneIndex));
 
 function goTo(i) {
   if (!lesson || i < 0 || i >= lesson.scenes.length) return;
   stop();
+  endFinding();
   hideQuiz();
   closeHand();
   sceneIndex = i;
@@ -1027,11 +1184,121 @@ function renderDots() {
 function updateButtons() {
   const has = !!lesson && started;
   els.play.disabled = !has;
-  els.play.textContent = playing ? "Pause" : "Play";
+  els.play.textContent = playing ? "Pause" : finding ? "Start over" : "Play";
   els.prev.disabled = !has || sceneIndex === 0;
-  els.next.disabled = !has || sceneIndex >= lesson.scenes.length - 1;
+  els.next.disabled = !has || (!finding && sceneIndex >= lesson.scenes.length - 1);
+  els.next.textContent = finding ? "Skip" : "Next";
   els.replay.disabled = !has;
-  els.hand.disabled = !has || !ready[sceneIndex];
+  els.hand.disabled = !has || !ready[sceneIndex] || !!finding;
+}
+
+// Keyboard: Space plays or pauses, arrows change scene, H raises your hand.
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const press = (btn) => { if (!btn.disabled) { e.preventDefault(); btn.click(); } };
+  if (e.key === " " && e.target.tagName !== "BUTTON") press(els.play);
+  else if (e.key === "ArrowRight") press(els.next);
+  else if (e.key === "ArrowLeft") press(els.prev);
+  else if (e.key === "h" || e.key === "H") press(els.hand);
+});
+
+// ---------- Find it: tap the parts on the picture ----------
+
+// Up to three parts from different scenes: big enough to tap, small enough to be a real search.
+function findRounds() {
+  const options = [];
+  lesson.scenes.forEach((s, i) => {
+    if (!s.image || (i === 0 && lesson.scenes.length > 3)) return;
+    const area = s.image.width * s.image.height;
+    const fits = s.parts.map((p, k) => ({ k, a: (p.shape?.area || 0) / area })).filter((o) => o.a > 0.006 && o.a < 0.35);
+    if (fits.length) options.push({ scene: i, k: fits[i % fits.length].k });
+  });
+  return options.length <= 3 ? options : [options[0], options[Math.floor(options.length / 2)], options[options.length - 1]];
+}
+
+const findPrompt = (label) => `Can you find the ${label}? Tap it on the picture.`;
+
+function startFinding() {
+  const rounds = findRounds();
+  if (!rounds.length) { showQuiz(); return; }
+  finding = { rounds, at: 0, score: 0, round: 0, locked: true };
+  updateButtons();
+  showRound();
+}
+
+async function showRound() {
+  const f = finding;
+  const r = f.rounds[f.at];
+  const scene = lesson.scenes[r.scene];
+  const label = scene.parts[r.k].label;
+  const round = ++f.round;
+  f.locked = true;
+  await wipe(() => {
+    clearBoard();
+    board = drawPicture(scene);
+    board.showAll();
+    els.board.classList.add("finding");
+    els.heading.textContent = `Find it · ${f.at + 1} of ${f.rounds.length}`;
+    els.status.textContent = "";
+    renderCaption(findPrompt(label));
+    marks = [];
+  });
+  if (finding !== f || f.round !== round) return;
+  f.locked = false;
+  say(findPrompt(label));
+}
+
+els.picture.addEventListener("click", async (e) => {
+  const f = finding;
+  if (!f || f.locked || !board?.hitTest) return;
+  f.locked = true;
+  const round = f.round;
+  const r = f.rounds[f.at];
+  const parts = lesson.scenes[r.scene].parts;
+  const label = parts[r.k].label;
+  const hit = board.hitTest(e.clientX, e.clientY, r.k);
+  let line;
+  if (hit.k === r.k) {
+    f.score++;
+    board.reveal(r.k);
+    board.activate(r.k);
+    line = `Yes! That’s the ${label}.`;
+  } else {
+    board.miss(hit.x, hit.y);
+    board.answer(r.k);
+    line = hit.k >= 0 ? `That’s the ${parts[hit.k].label}. The ${label} is here.` : `Not quite. The ${label} is here.`;
+  }
+  renderCaption(line);
+  marks = [];
+  await Promise.all([say(line), wait(2200)]);
+  if (finding === f && f.round === round) nextRound();
+});
+
+function skipRound() {
+  if (!finding) return;
+  stopSound();
+  nextRound();
+}
+
+function nextRound() {
+  const f = finding;
+  f.at++;
+  if (f.at < f.rounds.length) { showRound(); return; }
+  endFinding();
+  const n = f.rounds.length;
+  const line = f.score === n ? `You found all ${n}. Brilliant!` : `You found ${f.score} of ${n}.`;
+  els.heading.textContent = line;
+  renderCaption(`${line} Now one last question.`);
+  marks = [];
+  const myRun = runId;
+  say(`${line} Now one last question.`).then(() => { if (runId === myRun && lesson) showQuiz(); });
+}
+
+function endFinding() {
+  if (!finding) return;
+  finding = null;
+  els.board.classList.remove("finding");
+  updateButtons();
 }
 
 // ---------- Quiz ----------

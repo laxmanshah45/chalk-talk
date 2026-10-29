@@ -50,21 +50,43 @@ body {
   line-height: 1.55;
 }
 
-.top, .ask, .stage { max-width: 1120px; margin: 0 auto; }
+.top, .ask, .library, .stage { max-width: 1120px; margin: 0 auto; }
 
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-family: var(--hand);
   font-weight: 400;
   font-size: 2.6rem;
   line-height: 1;
   margin: 0;
 }
-.tagline { margin: 0.4rem 0 1.5rem; color: var(--ink-soft); max-width: 70ch; }
+.brand-mark { width: 2.6rem; height: 2.6rem; flex: none; }
+.tagline { margin: 0.5rem 0 1.4rem; color: var(--ink-soft); max-width: 68ch; }
 
 /* Topic form */
-.ask-label { display: block; font-weight: 700; margin-bottom: 0.4rem; }
+.ask {
+  padding: 1.1rem 1.25rem 0.8rem;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--field);
+}
+.ask input[type="text"], .ask select { background: var(--page); }
+.ask-label { display: block; font-weight: 700; margin-bottom: 0.5rem; }
 .ask-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.ask-row input { flex: 1 1 260px; }
+.ask-row input { flex: 1 1 260px; font-size: 1.1rem; }
+.ideas { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.75rem; }
+.ideas-label { color: var(--ink-soft); font-size: 0.9rem; margin-right: 0.2rem; }
+.idea {
+  font-weight: 400;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+.idea:hover { color: var(--ink); border-color: var(--ink-soft); }
 input[type="text"], select {
   font: inherit;
   color: var(--ink);
@@ -73,7 +95,9 @@ input[type="text"], select {
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
 }
-.ask-error { color: var(--wrong); min-height: 1.2em; margin: 0.4rem 0 0; font-size: 0.95rem; }
+.ask-error { color: var(--wrong); margin: 0.6rem 0 0; font-size: 0.95rem; }
+.ask-error:empty { display: none; }
+.ask { padding-bottom: 1.1rem; }
 
 button {
   font: inherit;
@@ -93,25 +117,114 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   outline-offset: 2px;
 }
 
-/* Saved lessons */
-.library { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.3rem; }
-.saved { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-.saved-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  max-width: 250px;
-  padding: 0.22rem 0.75rem 0.22rem 0.22rem;
-  border-radius: 999px;
-  font-weight: 400;
-  font-size: 0.92rem;
+/* Lesson gallery */
+.library { margin-top: 1.4rem; }
+.library-title { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 0.6rem; }
+.saved {
+  display: flex;
+  gap: 0.8rem;
+  overflow-x: auto;
+  padding: 0.15rem 0.15rem 0.6rem;
+  scroll-snap-type: x proximity;
 }
-.saved-item img { width: 46px; height: 26px; object-fit: cover; border-radius: 999px; flex: none; }
-.saved-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lesson-card {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 0.6rem;
+  overflow: hidden;
+  text-align: left;
+  font-weight: 400;
+  background: var(--field);
+  border-radius: 10px;
+  scroll-snap-align: start;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.lesson-card:hover { transform: translateY(-2px); border-color: var(--ink-soft); }
+.lesson-card.sample { border-color: var(--chalk-yellow); }
+.lesson-card-pic { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--board-deep); }
+.lesson-card-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.badge {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--chalk-yellow);
+  color: #1C2A26;
+}
+.lesson-card-title {
+  font-family: var(--hand);
+  font-size: 1.2rem;
+  line-height: 1.15;
+  padding: 0.5rem 0.7rem 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lesson-card-meta { font-size: 0.78rem; color: var(--ink-soft); padding: 0 0.7rem; }
+
+/* Quick start guide */
+.howto {
+  max-width: 1120px;
+  margin: 1.25rem auto 0;
+  padding: 1.2rem 1.4rem;
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(255, 255, 255, 0.05), transparent 55%),
+    var(--board);
+  color: var(--chalk);
+  border: 10px solid var(--frame);
+}
+.howto-title { font-family: var(--hand); font-weight: 400; font-size: 1.9rem; line-height: 1.1; margin: 0 0 0.9rem; }
+.howto-steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.8rem 1.2rem;
+}
+.howto-steps li { counter-increment: step; display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.7rem; }
+.howto-steps li::before {
+  content: counter(step);
+  grid-row: span 2;
+  font-family: var(--hand);
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--chalk-yellow);
+  border: 2px solid var(--chalk-yellow);
+  border-radius: 50% 45% 55% 48%;
+  width: 2.3rem;
+  height: 2.3rem;
+  display: grid;
+  place-items: center;
+}
+.howto-steps b { font-family: var(--hand); font-weight: 400; font-size: 1.35rem; line-height: 1.2; }
+.howto-steps span { color: var(--chalk-dim); font-size: 0.95rem; line-height: 1.45; }
+.howto-models { margin: 1rem 0 0; color: var(--chalk-dim); font-size: 0.92rem; max-width: 80ch; }
+.howto-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.9rem; }
+.howto-keys { margin: 0; color: var(--chalk-dim); font-size: 0.88rem; }
+.howto-keys kbd {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--chalk);
+  border: 1.5px solid var(--chalk-dim);
+  border-radius: 5px;
+  padding: 0 0.35rem;
+  margin: 0 0.15rem 0 0.6rem;
+}
+.howto-keys kbd:first-child { margin-left: 0; }
+.howto .primary { background: var(--chalk-yellow); border-color: var(--chalk-yellow); color: #1C2A26; }
 
 /* Chalkboard */
 .stage { margin-top: 1.75rem; }
 .lesson-title { font-weight: 700; margin: 0 0 0.5rem; min-height: 1.5em; }
+.title-note { font-weight: 400; color: var(--ink-soft); font-size: 0.92rem; margin-left: 0.6rem; }
+.title-note:empty { display: none; }
 
 .frame {
   border: 14px solid var(--frame);
@@ -166,6 +279,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   font-size: clamp(1.1rem, 2.2vw, 1.4rem);
 }
 .status:empty { display: none; }
+
+/* The empty board invites you to start with the sample */
+.board-cta {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0.8rem 1.6rem;
+  font-family: var(--hand);
+  font-weight: 400;
+  font-size: clamp(1.3rem, 3vw, 2rem);
+  color: var(--chalk-yellow);
+  border: 2.5px solid var(--chalk-yellow);
+  border-radius: 22px 16px 26px 14px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.board-cta:hover { background: rgba(246, 213, 92, 0.12); }
 
 /* The scene picture and its chalk layers */
 .picture { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -222,6 +353,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   50% { fill: var(--chalk-blue); }
 }
 
+/* "Find it": tap the parts on the picture */
+.board.finding .picture { cursor: crosshair; }
+.miss {
+  fill: none;
+  stroke: #F4A3A3;
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.outline.answer .trace { stroke: var(--chalk-blue); stroke-width: 9; opacity: 1; }
+.label.answer text { fill: var(--chalk-blue); }
+.label.answer .arrow { stroke: var(--chalk-blue); }
+
 .tip { opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .tip.on { opacity: 1; }
 .tip rect { fill: #F4F1E6; stroke: rgba(0, 0, 0, 0.35); stroke-width: 3; }
@@ -253,6 +398,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   gap: 1rem 1.25rem;
   align-content: center;
 }
+.visuals:empty { display: none; }
 .visual {
   border: 2.5px solid var(--chalk-dim);
   border-radius: 22px 16px 26px 14px;
@@ -424,6 +570,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 
 @media (max-width: 640px) {
   body { padding-top: 1.25rem; }
+  .brand { font-size: 2rem; }
+  .brand-mark { width: 2rem; height: 2rem; }
+  .ask { padding: 0.9rem 0.9rem 0.6rem; }
+  .lesson-card { flex-basis: 160px; }
+  .board-cta { font-size: 1.15rem; padding: 0.5rem 1rem; }
   .frame { border-width: 8px; }
   .heading { padding: 0.6rem 0.9rem 1.6rem; }
   .status { left: 0.9rem; right: 0.9rem; bottom: 0.6rem; }

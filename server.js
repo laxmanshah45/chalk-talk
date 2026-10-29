@@ -78,7 +78,8 @@ async function handleLesson(req, res) {
   const emit = (event) => { if (!res.destroyed) res.write(JSON.stringify(event) + "\n"); };
   try {
     const lesson = await buildLesson({ topic, level, lessonsDir: LESSONS_DIR, emit });
-    console.log(`Lesson ready: "${lesson.title}" (${lesson.scenes.length} scenes) in lessons/${lesson.id}`);
+    const steps = Object.entries(lesson.cost.steps).map(([k, v]) => `${k} ${usd(v)}`).join(", ");
+    console.log(`Lesson ready: "${lesson.title}" (${lesson.scenes.length} scenes) in ${lesson.seconds}s, about ${usd(lesson.cost.usd)} of API credit (${steps}). Saved in lessons/${lesson.id}`);
   } catch (err) {
     console.error("Couldn't build the lesson:", err.message);
     emit({ type: "error", error: err instanceof meta.MetaError ? err.message : "Muse Spark answered, but not in the lesson format. Try again or reword the topic." });
@@ -97,10 +98,11 @@ async function handleAsk(req, res) {
     return sendJson(res, 400, { error: "The request wasn't valid JSON." });
   }
 
+  const meter = meta.createMeter();
   let question = String(body.question || "").trim().slice(0, 500);
   if (!question && body.audio) {
     try {
-      question = (await ask.transcribe(Buffer.from(String(body.audio), "base64"))).slice(0, 500);
+      question = (await ask.transcribe(Buffer.from(String(body.audio), "base64"), { meter })).slice(0, 500);
     } catch (err) {
       console.error("Transcribe:", err.message);
       return sendJson(res, 502, { error: `Couldn't hear that: ${err.message}` });
@@ -119,8 +121,8 @@ async function handleAsk(req, res) {
   };
   const image = localMedia(String(body.image || ""));
   try {
-    const reply = await ask.answer({ question, context, image, answersDir: ANSWERS_DIR });
-    console.log(`Answered: "${question}"`);
+    const reply = await ask.answer({ question, context, image, answersDir: ANSWERS_DIR, meter });
+    console.log(`Answered: "${question}" (about ${usd(meter.usd)} of API credit)`);
     sendJson(res, 200, reply);
   } catch (err) {
     console.error("Couldn't answer:", err.message);
@@ -196,6 +198,8 @@ function readBody(req, limit = 1e6) {
     req.on("error", reject);
   });
 }
+
+const usd = (v) => (v < 0.01 ? `${(v * 100).toFixed(2)}¢` : `$${v.toFixed(3)}`);
 
 function sendJson(res, status, obj) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });

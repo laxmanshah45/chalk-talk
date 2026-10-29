@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chalk Talk</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect x='4' y='8' width='40' height='30' rx='3' fill='%2324453C' stroke='%238C6B4B' stroke-width='3'/%3E%3Cpath d='M11 29c4-9 8-12 11-5s7 3 11-9' fill='none' stroke='%23F6D55C' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
@@ -11,8 +12,18 @@
 </head>
 <body>
   <header class="top">
-    <h1 class="brand">Chalk Talk</h1>
-    <p class="tagline">Type a topic. Watch it get painted, traced and explained on a chalkboard, and raise your hand any time to ask a question.</p>
+    <div class="brand-row">
+      <h1 class="brand">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="4" y="8" width="40" height="30" rx="3" fill="#24453C" stroke="#8C6B4B" stroke-width="3"/>
+          <path d="M11 29c4-9 8-12 11-5s7 3 11-9" fill="none" stroke="#F6D55C" stroke-width="2.6" stroke-linecap="round"/>
+          <rect x="28" y="36" width="12" height="5" rx="2" fill="#F1F3EE" transform="rotate(-12 34 38)"/>
+        </svg>
+        Chalk Talk
+      </h1>
+      <button id="howto-open" type="button" class="link">How it works</button>
+    </div>
+    <p class="tagline">Type any topic. A tutor paints it on a chalkboard, traces each part as it explains, and answers when you raise your hand.</p>
   </header>
 
   <form id="topic-form" class="ask">
@@ -27,12 +38,36 @@
       </select>
       <button id="make" type="submit" class="primary">Make lesson</button>
     </div>
-    <p id="ask-error" class="ask-error" role="alert"></p>
-    <div class="library">
-      <button id="sample" type="button" class="link">Play the sample lesson</button>
-      <div id="saved" class="saved" aria-label="Your lessons"></div>
+    <div class="ideas">
+      <span class="ideas-label">Try</span>
+      <button type="button" class="idea">Why is the sky blue?</button>
+      <button type="button" class="idea">How do plants make food from sunlight?</button>
+      <button type="button" class="idea">How does the heart pump blood?</button>
+      <button type="button" class="idea">What is inside an atom?</button>
     </div>
+    <p id="ask-error" class="ask-error" role="alert"></p>
   </form>
+
+  <section class="library" aria-labelledby="library-title">
+    <h2 id="library-title" class="library-title">Lessons</h2>
+    <div id="saved" class="saved"></div>
+  </section>
+
+  <!-- Quick start: shown on the first visit, and from "How it works". -->
+  <section id="howto" class="howto" aria-labelledby="howto-title" hidden>
+    <h2 id="howto-title" class="howto-title">How to use Chalk Talk</h2>
+    <ol class="howto-steps">
+      <li><b>Pick a topic</b><span>Type anything you're curious about, or play the sample lesson first.</span></li>
+      <li><b>Watch it draw</b><span>Each part of the picture is traced, coloured in and labelled the moment the tutor mentions it.</span></li>
+      <li><b>Raise your hand</b><span>Ask out loud or type a question at any time. The tutor answers by pointing at the picture.</span></li>
+      <li><b>Find it</b><span>At the end, tap the parts on the picture, then answer one quick question.</span></li>
+    </ol>
+    <p class="howto-models">Made by four Meta models working together: Muse Spark writes the lesson and looks at every picture, Muse Image paints it, SAM 3.1 traces each part, and Muse Voice Transcribe hears your questions.</p>
+    <div class="howto-foot">
+      <p class="howto-keys"><kbd>Space</kbd> play or pause <kbd>&larr;</kbd> <kbd>&rarr;</kbd> change scene <kbd>H</kbd> raise hand <kbd>Esc</kbd> back to the lesson</p>
+      <button id="howto-close" type="button" class="primary">Got it</button>
+    </div>
+  </section>
 
   <main class="stage">
     <p id="lesson-title" class="lesson-title"></p>
@@ -46,7 +81,8 @@
         <h2 id="scene-heading" class="chalk heading">Your lesson appears here</h2>
         <!-- Shows each Meta model's step while a new lesson is being made. -->
         <div id="build" class="build" hidden></div>
-        <p id="board-status" class="chalk status">Pick a topic above, or play the sample lesson.</p>
+        <p id="board-status" class="chalk status">Pick a topic above, or start with the sample.</p>
+        <button id="sample" type="button" class="board-cta"><span aria-hidden="true">&#9654;</span> Play the sample lesson</button>
         <div id="wipe" class="wipe" aria-hidden="true"></div>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 An animated tutor built on Meta Model API for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Every line in this repository was written during the hackathon.
 
-You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it. Raise your hand at any time to ask a question out loud, and the tutor answers while pointing at the picture. A quick quiz checks understanding at the end.
+You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it, while the camera moves in on it. Raise your hand at any time to ask a question out loud, and the tutor answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
 
 ## How it works
 
@@ -10,14 +10,16 @@ Four Meta models work together on every lesson:
 
 1. **Muse Spark** writes the script: scenes, narration, a picture plan for each scene, the parts to point at, and a quiz.
 2. **Muse Image** paints every scene's chalk picture, all at the same time.
-3. **Muse Spark** looks at each finished picture and marks where each part is drawn.
-4. **SAM 3.1** turns each mark into the part's exact outline, which the board traces in chalk and uses to colour the part in.
+3. **Muse Spark** looks at each finished picture, marks every place each part is drawn, and reviews the picture. If it's unclear, abstract, or missing a part, Muse Image repaints it once and the better picture is kept.
+4. **SAM 3.1** turns each mark into the part's exact outline, which the board traces in chalk, uses to colour the part in, and checks your taps against in "Find it".
 
 When a student raises their hand, **Muse Voice Transcribe** turns the spoken question into text, and **Muse Spark** answers it while looking at the picture on the board, choosing which parts to point at as it explains.
 
 Meta Model API has no text-to-speech, so narration uses **Kokoro**, an open-weight voice model that runs on your own computer. Without it, the browser's built-in voice is used instead.
 
-The board shows each model's step live while a lesson is made, and scene 1 starts playing as soon as it's ready.
+The board shows each model's step live while a lesson is made, and scene 1 starts playing as soon as it's ready. When it's done, the page and the terminal show how long it took and what it cost, worked out from the API's own usage numbers.
+
+Keyboard: <kbd>Space</kbd> play or pause, <kbd>←</kbd> <kbd>→</kbd> change scene, <kbd>H</kbd> raise hand, <kbd>Esc</kbd> back to the lesson.
 
 ## Run it
 
@@ -34,7 +36,7 @@ Every lesson you make is saved in the `lessons/` folder and listed under the top
 
 ## What a lesson costs
 
-About 10 to 20 cents of API credit for a five-scene lesson: five Muse Image pictures ($0.05), five SAM 3.1 segmentations ($0.0125), and Muse Spark for the script and for finding parts. Each raised-hand question is about 1 cent. Narration with Kokoro is free because it runs locally.
+About 16 cents of API credit for a five-scene lesson. A measured example: script 4.2¢, five pictures 5¢, finding parts 5.7¢, tracing 1.25¢. A repainted picture adds about 2¢. Each raised-hand question is about 1 cent. Narration with Kokoro and the "Find it" round are free because they run locally.
 
 ## Before you push to GitHub
 
