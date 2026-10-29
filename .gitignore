@@ -1,0 +1,4 @@
+# Never commit your API key
+.env
+node_modules/
+.DS_Store
