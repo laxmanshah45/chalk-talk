@@ -88,6 +88,8 @@ async function handleLesson(req, res) {
 }
 
 // A raised hand: { audio: base64 WAV } or { question: text }, plus the lesson context.
+// Streams one JSON object per line: "heard" as soon as the question is known, "answer" once
+// Muse Spark replies, a "clip" per spoken sentence as each is voiced, then "done".
 async function handleAsk(req, res) {
   if (!meta.hasKey()) return sendJson(res, 500, { error: NO_KEY });
 
@@ -97,37 +99,44 @@ async function handleAsk(req, res) {
   } catch {
     return sendJson(res, 400, { error: "The request wasn't valid JSON." });
   }
+  const typed = String(body.question || "").trim().slice(0, 500);
+  if (!typed && !body.audio) return sendJson(res, 400, { error: "Ask a question first." });
 
+  res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
+  const emit = (event) => { if (!res.destroyed) res.write(JSON.stringify(event) + "\n"); };
   const meter = meta.createMeter();
-  let question = String(body.question || "").trim().slice(0, 500);
-  if (!question && body.audio) {
-    try {
-      question = (await ask.transcribe(Buffer.from(String(body.audio), "base64"), { meter })).slice(0, 500);
-    } catch (err) {
-      console.error("Transcribe:", err.message);
-      return sendJson(res, 502, { error: `Couldn't hear that: ${err.message}` });
-    }
-    if (!question) return sendJson(res, 200, { question: "", answer: "", point: [], speech: null, heard: false });
-  }
-  if (!question) return sendJson(res, 400, { error: "Ask a question first." });
-
-  const c = body.context || {};
-  const context = {
-    title: String(c.title || "").slice(0, 120),
-    level: String(c.level || "").slice(0, 60),
-    heading: String(c.heading || "").slice(0, 120),
-    narration: String(c.narration || "").slice(0, 800),
-    labels: (Array.isArray(c.labels) ? c.labels : []).map((l) => String(l).slice(0, 40)).slice(0, 6),
-  };
-  const image = localMedia(String(body.image || ""));
+  const started = Date.now();
+  let question = typed;
   try {
-    const reply = await ask.answer({ question, context, image, answersDir: ANSWERS_DIR, meter });
-    console.log(`Answered: "${question}" (about ${usd(meter.usd)} of API credit)`);
-    sendJson(res, 200, reply);
+    if (!question) {
+      try {
+        question = (await ask.transcribe(Buffer.from(String(body.audio), "base64"), { meter })).slice(0, 500);
+      } catch (err) {
+        console.error("Transcribe:", err.message);
+        emit({ type: "error", error: `Couldn't hear that: ${err.message}` });
+        return res.end();
+      }
+    }
+    emit({ type: "heard", question });
+    if (!question) return res.end();
+
+    const c = body.context || {};
+    const context = {
+      title: String(c.title || "").slice(0, 120),
+      level: String(c.level || "").slice(0, 60),
+      heading: String(c.heading || "").slice(0, 120),
+      narration: String(c.narration || "").slice(0, 800),
+      labels: (Array.isArray(c.labels) ? c.labels : []).map((l) => String(l).slice(0, 40)).slice(0, 6),
+    };
+    const image = localMedia(String(body.image || ""));
+    await ask.answer({ question, context, image, answersDir: ANSWERS_DIR, meter, emit });
+    emit({ type: "done", cost: meter.summary() });
+    console.log(`Answered: "${question}" in ${((Date.now() - started) / 1000).toFixed(1)}s (about ${usd(meter.usd)} of API credit)`);
   } catch (err) {
     console.error("Couldn't answer:", err.message);
-    sendJson(res, 502, { error: err instanceof meta.MetaError ? err.message : "Muse Spark couldn't answer that one. Try asking another way." });
+    emit({ type: "error", error: err instanceof meta.MetaError ? err.message : "Muse Spark couldn't answer that one. Try asking another way." });
   }
+  res.end();
 }
 
 // Speak a short line (quiz question or feedback) in the narration voice. Works without an API key.

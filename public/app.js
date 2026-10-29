@@ -12,7 +12,7 @@ const els = {
   caption: $("#caption"), play: $("#play"), prev: $("#prev"), next: $("#next"),
   replay: $("#replay"), hand: $("#hand"), dots: $("#dots"), quiz: $("#quiz"),
   handPanel: $("#hand-panel"), handStatus: $("#hand-status"), handForm: $("#hand-form"),
-  handText: $("#hand-text"), handClose: $("#hand-close"),
+  handText: $("#hand-text"), handClose: $("#hand-close"), bubble: $("#ask-bubble"), bubbleText: $("#ask-bubble-text"),
   voice: $("#voice"), rate: $("#rate"), voiceNote: $("#voice-note"), browserVoiceRow: $("#browser-voice-row"),
 };
 
@@ -513,6 +513,7 @@ function drawCards(scene) {
     reveal: (k) => cards[k]?.classList.add("shown"),
     activate: (k) => cards.forEach((c, j) => c.classList.toggle("active", j === k)),
     pulse: (k) => { cards[k]?.classList.add("shown"); cards.forEach((c, j) => c.classList.toggle("active", j === k)); },
+    reset: () => cards.forEach((c) => c.classList.remove("active")),
     finish: () => cards.forEach((c) => c.classList.add("shown")),
   };
 }
@@ -612,6 +613,14 @@ function drawPicture(scene) {
         p.label?.group.classList.toggle("active", p.k === k);
       });
       focus(k);
+    },
+    // After a raised-hand answer: nothing highlighted, whole picture in view.
+    reset: () => {
+      parts.forEach((p) => {
+        p.outline?.classList.remove("active", "pulse");
+        p.label?.group.classList.remove("active", "pulse");
+      });
+      moveView([0, 0, W, H], 1200);
     },
     // "Find it": show the whole picture with no labels, and test where the student tapped.
     showAll: () => full.classList.add("on"),
@@ -1349,10 +1358,15 @@ function hideQuiz() {
 
 let rec = null;          // the microphone recording in progress
 let resumeAfter = false; // whether the lesson was playing when the hand went up
+let askRun = 0;          // bumps for every new question, so an older answer stream is ignored
+let askAbort = null;     // cancels the answer request in flight
 
 els.hand.addEventListener("click", async () => {
   if (rec) { await sendRecording(); return; }
   openHand();
+  // Hush anything still talking (an earlier answer) so the microphone only hears the student.
+  cancelAsk();
+  stop();
   await startRecording();
 });
 els.handForm.addEventListener("submit", (e) => {
@@ -1378,23 +1392,60 @@ function closeHand() {
   cancelRecording();
   els.handPanel.hidden = true;
   els.handStatus.textContent = "";
+  setBubble(null);
   setHandButton(false);
 }
 
+function cancelAsk() {
+  askRun++;
+  askAbort?.abort();
+  askAbort = null;
+}
+
 function backToLesson() {
+  cancelAsk();
   stop();
   closeHand();
   if (!lesson) return;
   // Restore the scene's caption and timings without redrawing the board.
+  board?.reset?.();
   renderCaption(lesson.scenes[sceneIndex].narration);
   marks = sceneMarks(lesson.scenes[sceneIndex]);
-  if (resumeAfter) { resumeAfter = false; play(); }
+  if (resumeAfter) { resumeAfter = false; continueLesson(); }
+}
+
+// Pick up where the lesson left off. If the hand went up after the scene had finished,
+// move on to the next scene instead of replaying this one.
+async function continueLesson() {
+  const scene = lesson.scenes[sceneIndex];
+  if (sentenceAt < sentencesFor(scene.narration, scene.speech).length) { play(); return; }
+  if (sceneIndex >= lesson.scenes.length - 1) { startFinding(); return; }
+  sceneIndex++;
+  await wipe(() => renderScene(sceneIndex));
+  play();
 }
 
 function setHandButton(listening) {
   els.hand.setAttribute("aria-pressed", String(listening));
   els.hand.classList.toggle("listening", listening);
   els.hand.innerHTML = listening ? `<span aria-hidden="true">●</span> Done asking` : `<span aria-hidden="true">✋</span> Raise hand`;
+}
+
+// The chalk bubble on the board shows what the raised hand is doing:
+// listening (with a live microphone level), thinking, or answering.
+function setBubble(state, text) {
+  els.bubble.hidden = !state;
+  if (!state) return;
+  els.bubble.dataset.state = state;
+  els.bubbleText.textContent = text;
+  setLevel(0);
+}
+
+const LEVEL_SHAPE = [0.55, 0.85, 1, 0.85, 0.55];
+function setLevel(level) {
+  els.bubble.querySelectorAll(".ask-meter i").forEach((bar, i) => {
+    bar.style.transform = `scaleY(${(0.18 + level * LEVEL_SHAPE[i] * 0.82).toFixed(3)})`;
+  });
 }
 
 async function startRecording() {
@@ -1408,13 +1459,28 @@ async function startRecording() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const source = ctx.createMediaStreamSource(stream);
     const node = ctx.createScriptProcessor(4096, 1, 1);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
     const chunks = [];
     node.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
     source.connect(node);
+    source.connect(analyser);
     node.connect(ctx.destination);
-    rec = { stream, ctx, source, node, chunks, timer: setTimeout(() => sendRecording(), 30000) };
+    rec = { stream, ctx, source, node, chunks, raf: 0, timer: setTimeout(() => sendRecording(), 30000) };
+    // Live level meter, so it's obvious the microphone can hear you.
+    const buf = new Float32Array(analyser.fftSize);
+    const meter = () => {
+      if (rec?.ctx !== ctx) return;
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) sum += v * v;
+      setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 7));
+      rec.raf = requestAnimationFrame(meter);
+    };
     setHandButton(true);
     els.handStatus.textContent = "Listening… ask your question, then press Done asking.";
+    setBubble("listening", "Listening… ask your question");
+    meter();
   } catch {
     els.handStatus.textContent = "The microphone is blocked. Type your question instead.";
     els.handText.focus();
@@ -1426,6 +1492,7 @@ async function stopRecording() {
   rec = null;
   if (!r) return null;
   clearTimeout(r.timer);
+  cancelAnimationFrame(r.raf);
   r.node.disconnect();
   r.source.disconnect();
   r.stream.getTracks().forEach((t) => t.stop());
@@ -1446,17 +1513,34 @@ async function sendRecording() {
   const wav = await stopRecording();
   if (!wav) {
     els.handStatus.textContent = "I didn’t hear anything. Press Raise hand to try again, or type your question.";
+    setBubble(null);
     return;
   }
   askQuestion({ audio: toBase64(wav) });
 }
 
+// Ask the server and follow its steps as they stream in: the question as heard, Muse Spark's
+// answer, then one audio clip per sentence. The answer starts speaking with the first clip.
 async function askQuestion(payload) {
   const scene = lesson.scenes[sceneIndex];
-  els.handStatus.textContent = payload.audio ? "Muse Voice Transcribe is listening back…" : "Muse Spark is thinking…";
+  cancelAsk();
+  stop();
+  const myAsk = askRun;
+  askAbort = new AbortController();
+  let question = payload.question || "";
+  const thinking = () => {
+    els.handStatus.textContent = `You asked: “${question}”  Muse Spark is thinking…`;
+    setBubble("thinking", `You asked: “${question}”`);
+  };
+  if (question) thinking();
+  else {
+    els.handStatus.textContent = "Muse Voice Transcribe is writing down your question…";
+    setBubble("thinking", "Writing down your question");
+  }
   try {
     const res = await fetch("/api/ask", {
       method: "POST",
+      signal: askAbort.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...payload,
@@ -1464,29 +1548,68 @@ async function askQuestion(payload) {
         image: scene.image ? media(scene.image.src) : "",
       }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
-    if (data.heard === false) {
-      els.handStatus.textContent = "I didn’t catch that. Press Raise hand to try again, or type your question.";
-      return;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server returned ${res.status}`);
     }
-    els.handStatus.textContent = `You asked: “${data.question}”`;
-    await playAnswer(data);
+    const clips = clipQueue();
+    let speaking = null;
+    try {
+      for await (const ev of readLines(res.body)) {
+        if (myAsk !== askRun) return;
+        if (ev.type === "error") throw new Error(ev.error);
+        if (ev.type === "heard") {
+          if (!ev.question) {
+            els.handStatus.textContent = "I didn’t catch that. Press Raise hand to try again, or type your question.";
+            setBubble(null);
+            return;
+          }
+          question = ev.question;
+          thinking();
+        } else if (ev.type === "answer") {
+          els.handStatus.textContent = `You asked: “${question}”`;
+          setBubble("answering", `You asked: “${question}”`);
+          speaking = playAnswer(ev, clips, myAsk);
+        } else if (ev.type === "clip") {
+          clips.add(ev);
+        }
+      }
+    } finally {
+      clips.end();
+    }
+    await speaking;
   } catch (err) {
+    if (myAsk !== askRun || err.name === "AbortError") return;
     els.handStatus.textContent = err.message;
+    setBubble(null);
   }
 }
 
+// Answer clips arrive one at a time while earlier ones are already playing.
+function clipQueue() {
+  const items = [];
+  let ended = false;
+  let wake = null;
+  return {
+    add(clip) { items[clip.index] = clip; wake?.(); },
+    end() { ended = true; wake?.(); },
+    async get(k) {
+      while (!items[k] && !ended) await new Promise((r) => { wake = r; });
+      return items[k] || null;
+    },
+  };
+}
+
 // Speak the answer in the caption area, pointing at the parts of the picture it mentions.
-async function playAnswer(data) {
+async function playAnswer(ev, clips, myAsk) {
   stop();
   const myRun = runId;
-  playing = false;
-  renderCaption(data.answer);
+  const live = () => myRun === runId && myAsk === askRun;
+  renderCaption(ev.answer);
   const labels = lesson.scenes[sceneIndex].parts.map((p) => p.label);
   let from = 0;
   marks = [];
-  for (const pt of data.point || []) {
+  for (const pt of ev.point || []) {
     const k = labels.indexOf(pt.label);
     if (k === -1) continue;
     let wi = findWord(pt.trigger, from);
@@ -1494,15 +1617,19 @@ async function playAnswer(data) {
     if (wi === -1) wi = 0; else from = wi + 1;
     marks.push({ wordIndex: wi, done: false, fire: () => board?.pulse(k), activate: () => board?.activate(k) });
   }
-  for (const part of sentencesFor(data.answer, data.speech)) {
-    if (myRun !== runId) return;
-    await speakSentence(part, myRun);
+  const parts = sentencesFor(ev.answer, null);
+  for (let k = 0; k < parts.length; k++) {
+    const clip = ev.voice ? await clips.get(k) : null;
+    if (!live()) return;
+    await speakSentence(clip
+      ? { text: ev.answer.slice(clip.start, clip.end), start: clip.start, end: clip.end, src: media(clip.src), duration: clip.duration }
+      : parts[k], myRun);
   }
-  if (myRun !== runId) return;
+  if (!live()) return;
   markProgress(words.length);
-  els.handStatus.textContent += resumeAfter ? "  Back to the lesson…" : "";
+  if (resumeAfter) els.handStatus.textContent += "  Back to the lesson…";
   await wait(1500);
-  if (myRun !== runId || els.handPanel.hidden) return;
+  if (!live() || els.handPanel.hidden) return;
   backToLesson();
 }
 
