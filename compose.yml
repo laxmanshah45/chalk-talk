@@ -10,6 +10,8 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: "3000"
+      # Reach Meta Model API over IPv4 first: from some data centres it offers no models over IPv6.
+      NODE_OPTIONS: --dns-result-order=ipv4first
       TRUST_PROXY: "1"
       LESSONS_PER_DAY: ${LESSONS_PER_DAY:-40}
       LESSONS_PER_VISITOR_PER_DAY: ${LESSONS_PER_VISITOR_PER_DAY:-5}
