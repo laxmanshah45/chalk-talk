@@ -1238,6 +1238,7 @@ async function showRound() {
     board = drawPicture(scene);
     board.showAll();
     els.board.classList.add("finding");
+    els.dots.hidden = true; // the round's pictures come from different scenes; the heading counts rounds instead
     els.heading.textContent = `Find it · ${f.at + 1} of ${f.rounds.length}`;
     els.status.textContent = "";
     renderCaption(findPrompt(label));
@@ -1298,6 +1299,7 @@ function endFinding() {
   if (!finding) return;
   finding = null;
   els.board.classList.remove("finding");
+  els.dots.hidden = false;
   updateButtons();
 }
 
