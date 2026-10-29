@@ -11,7 +11,7 @@ loadEnv(path.join(__dirname, ".env"));
 
 const meta = require("./lib/meta");
 const voice = require("./lib/voice");
-const { buildLesson, listLessons } = require("./lib/lesson");
+const { buildLesson, listLessons, jpegSize } = require("./lib/lesson");
 const ask = require("./lib/ask");
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -66,18 +66,32 @@ async function handleLesson(req, res) {
 
   let body;
   try {
-    body = JSON.parse(await readBody(req));
+    body = JSON.parse(await readBody(req, 12e6));
   } catch {
     return sendJson(res, 400, { error: "The request wasn't valid JSON." });
   }
   const topic = String(body.topic || "").trim().slice(0, 300);
   const level = String(body.level || "middle school").trim().slice(0, 60);
-  if (!topic) return sendJson(res, 400, { error: "Type a topic first." });
+  // An optional photo (a textbook diagram, say), sent by the page as a JPEG data URL.
+  let photo = null;
+  if (body.photo) {
+    const m = String(body.photo).match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return sendJson(res, 400, { error: "That picture couldn't be read. Try a JPG or PNG." });
+    photo = Buffer.from(m[1], "base64");
+    if (photo.length > 6e6) return sendJson(res, 400, { error: "That picture is too big. Try a smaller one." });
+    try {
+      if (photo[0] !== 0xff || photo[1] !== 0xd8) throw new Error("not a JPEG");
+      jpegSize(photo);
+    } catch {
+      return sendJson(res, 400, { error: "That picture couldn't be read. Try a JPG or PNG." });
+    }
+  }
+  if (!topic && !photo) return sendJson(res, 400, { error: "Type a topic first, or add a picture." });
 
   res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
   const emit = (event) => { if (!res.destroyed) res.write(JSON.stringify(event) + "\n"); };
   try {
-    const lesson = await buildLesson({ topic, level, lessonsDir: LESSONS_DIR, emit });
+    const lesson = await buildLesson({ topic, level, photo, lessonsDir: LESSONS_DIR, emit });
     const steps = Object.entries(lesson.cost.steps).map(([k, v]) => `${k} ${usd(v)}`).join(", ");
     console.log(`Lesson ready: "${lesson.title}" (${lesson.scenes.length} scenes) in ${lesson.seconds}s, about ${usd(lesson.cost.usd)} of API credit (${steps}). Saved in lessons/${lesson.id}`);
   } catch (err) {

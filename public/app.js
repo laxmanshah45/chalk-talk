@@ -19,6 +19,8 @@ const els = {
   askDone: $("#ask-done"), askCancel: $("#ask-cancel"),
   speed: $("#speed"), cc: $("#cc"), transcriptBtn: $("#transcript-btn"), transcript: $("#transcript"), sceneCount: $("#scene-count"),
   player: $("#player"), fullscreen: $("#fullscreen"), buildNote: $("#build-note"), lessonNote: $("#lesson-note"),
+  photoBtn: $("#photo-btn"), photoInput: $("#photo-input"), photoChip: $("#photo-chip"), photoThumb: $("#photo-thumb"),
+  photoRemove: $("#photo-remove"), snap: $("#snap"), dropZone: $("#drop-zone"),
   voice: $("#voice"), rate: $("#rate"), voiceNote: $("#voice-note"), browserVoiceRow: $("#browser-voice-row"),
 };
 
@@ -52,6 +54,8 @@ let makingState = null; // the lesson being made: { topic, started (ms), timer, 
 const GALLERY_SLOTS = 3; // saved lessons shown beside the sample before "See all"
 let galleryOpen = false;
 let sampleSummary = null;
+let attachedPhoto = null; // a picture to build the next lesson around: { dataUrl, name }
+let sentPhoto = null;     // the picture sent with the lesson being made, cleared once its script arrives
 
 // ---------- Startup ----------
 
@@ -196,6 +200,8 @@ function drawDemoScene(root, scene) {
   return parts;
 }
 
+const PHOTO_PLACEHOLDER = "Ask about it (optional)";
+
 // The topic box's placeholder writes out example questions, one after another,
 // whenever the box is empty and not being typed in.
 (function typePlaceholders() {
@@ -204,6 +210,7 @@ function drawDemoScene(root, scene) {
   const examples = ["How do volcanoes erupt?", "Why is the sky blue?", "How do plants make food from sunlight?", "Why do we have seasons?", "What is inside an atom?", "How does the heart pump blood?"];
   let i = 0, text = "", deleting = false, hold = 40;
   setInterval(() => {
+    if (attachedPhoto) return;
     if (document.activeElement === els.topic || els.topic.value || currentView() !== "home") {
       els.topic.placeholder = base;
       text = "";
@@ -229,8 +236,9 @@ function drawDemoScene(root, scene) {
 els.form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const topic = els.topic.value.trim();
-  if (!topic) {
-    els.askError.textContent = "Type a topic first, like “How do volcanoes erupt?”";
+  const photo = attachedPhoto;
+  if (!topic && !photo) {
+    els.askError.textContent = "Type a topic first, like “How do volcanoes erupt?”, or add a picture.";
     els.topic.focus();
     return;
   }
@@ -241,13 +249,15 @@ els.form.addEventListener("submit", async (e) => {
   els.make.disabled = true;
   building = true;
   started = false;
-  showBuild(topic);
+  showBuild(topic || "Your picture");
+  if (photo) paintBackground(photo.dataUrl);
+  sentPhoto = photo;
   go("making");
   try {
     const res = await fetch("/api/lesson", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, level: document.querySelector('input[name="level"]:checked')?.value || "middle school" }),
+      body: JSON.stringify({ topic, level: document.querySelector('input[name="level"]:checked')?.value || "middle school", photo: photo?.dataUrl }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -283,6 +293,8 @@ els.sample.addEventListener("click", () => openLesson(SAMPLE));
 function onBuildEvent(ev) {
   if (ev.type === "error") throw new Error(ev.error);
   if (ev.type === "script") {
+    if (sentPhoto && attachedPhoto === sentPhoto) clearPhoto();
+    sentPhoto = null;
     lesson = normalize(ev.lesson);
     base = ev.base;
     ready = lesson.scenes.map(() => false);
@@ -372,12 +384,12 @@ $("#see-all").addEventListener("click", () => { galleryOpen = !galleryOpen; refr
 // The same summary the server sends for saved lessons, worked out from a lesson file.
 function summarize(l) {
   const seconds = l.scenes.reduce((sum, s) => sum + (s.speech || []).reduce((a, c) => a + (c.duration || 0), 0), 0);
-  return { title: l.title, topic: l.topic || "", level: l.level || "", scenes: l.scenes.length, listenMinutes: seconds ? Math.max(1, Math.round(seconds / 60)) : null, costUsd: l.cost?.usd ?? null };
+  return { title: l.title, topic: l.topic || "", level: l.level || "", scenes: l.scenes.length, listenMinutes: seconds ? Math.max(1, Math.round(seconds / 60)) : null, costUsd: l.cost?.usd ?? null, fromPhoto: !!l.photo };
 }
 
 const LEVEL_NAMES = { "elementary school": "Elementary", "middle school": "Middle school", "high school": "High school", college: "College" };
 
-function lessonCard({ title, topic, level, scenes, listenMinutes, createdAt, costUsd, thumb, folder, sample }) {
+function lessonCard({ title, topic, level, scenes, listenMinutes, createdAt, costUsd, fromPhoto, thumb, folder, sample }) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "lesson-card" + (sample ? " sample" : "");
@@ -394,7 +406,7 @@ function lessonCard({ title, topic, level, scenes, listenMinutes, createdAt, cos
   b.querySelector(".lesson-card-title").textContent = title;
   const t = b.querySelector(".lesson-card-topic");
   if (topic) t.textContent = `“${topic}”`; else t.remove();
-  const tags = [LEVEL_NAMES[level] || "", scenes ? `${scenes} scenes` : "", listenMinutes ? `${listenMinutes} min` : ""].filter(Boolean);
+  const tags = [fromPhoto ? "From a photo" : "", LEVEL_NAMES[level] || "", scenes ? `${scenes} scenes` : "", listenMinutes ? `${listenMinutes} min` : ""].filter(Boolean);
   b.querySelector(".lesson-card-tags").append(...tags.map((x) => Object.assign(document.createElement("span"), { textContent: x })));
   const when = createdAt ? new Date(createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   const cost = costUsd ? `${Math.max(1, Math.round(costUsd * 100))}¢ of API credit` : "";
@@ -426,6 +438,101 @@ for (const idea of document.querySelectorAll(".idea")) {
     els.askError.textContent = "";
     els.make.focus();
   });
+}
+
+// ---------- A picture to learn from: pick, drop or paste one ----------
+
+els.photoBtn.addEventListener("click", () => els.photoInput.click());
+els.snap.addEventListener("click", () => els.photoInput.click());
+els.photoRemove.addEventListener("click", () => { clearPhoto(); els.topic.focus(); });
+els.photoInput.addEventListener("change", () => {
+  const file = els.photoInput.files?.[0];
+  els.photoInput.value = "";
+  if (file) usePhotoFile(file);
+});
+
+// Drag a picture anywhere over the home screen; the board shows where to drop it.
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+const draggingFiles = (e) => currentView() === "home" && hasFiles(e);
+// On the other screens, a dropped file would otherwise replace the app in the browser tab.
+for (const type of ["dragover", "drop"]) {
+  document.addEventListener(type, (e) => { if (hasFiles(e) && currentView() !== "home") e.preventDefault(); });
+}
+document.addEventListener("dragenter", (e) => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  els.dropZone.hidden = false;
+});
+document.addEventListener("dragover", (e) => { if (draggingFiles(e)) e.preventDefault(); });
+document.addEventListener("dragleave", (e) => {
+  if (!draggingFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) els.dropZone.hidden = true;
+});
+document.addEventListener("drop", (e) => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  els.dropZone.hidden = true;
+  const file = [...e.dataTransfer.files].find((f) => f.type.startsWith("image/"));
+  if (file) usePhotoFile(file);
+  else els.askError.textContent = "That isn’t a picture. Try a JPG or PNG.";
+});
+// Paste a picture (a screenshot, say) while on the home screen.
+document.addEventListener("paste", (e) => {
+  if (currentView() !== "home") return;
+  const types = [...(e.clipboardData?.types || [])];
+  if (types.includes("text/plain") || types.includes("text/html")) return;
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+  if (!item) return;
+  e.preventDefault();
+  usePhotoFile(item.getAsFile());
+});
+
+async function usePhotoFile(file) {
+  els.askError.textContent = "";
+  try {
+    attachedPhoto = await shrinkPhoto(file);
+    els.photoThumb.src = attachedPhoto.dataUrl;
+    els.photoChip.hidden = false;
+    els.photoBtn.hidden = true;
+    els.topic.placeholder = PHOTO_PLACEHOLDER;
+    els.topic.focus();
+  } catch (err) {
+    els.askError.textContent = err.message;
+  }
+}
+
+function clearPhoto() {
+  attachedPhoto = null;
+  els.photoChip.hidden = true;
+  els.photoBtn.hidden = false;
+  els.photoThumb.removeAttribute("src");
+  els.topic.placeholder = "What do you want to learn?";
+}
+
+// Big phone photos are shrunk to at most 1600 pixels on their long side and sent as JPEG.
+async function shrinkPhoto(file) {
+  if (!file?.type?.startsWith("image/")) throw new Error("That isn’t a picture. Try a JPG or PNG.");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("That picture couldn’t be opened. Try a JPG or PNG."));
+      i.src = url;
+    });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.88), name: file.name || "Pasted picture" };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function openLesson(folder) {
@@ -498,13 +605,14 @@ function updateTitle() {
 
 // ---------- Making a lesson: each Meta model's step, live ----------
 
+// Short, because the scene cards are narrow; the stations above say which model is working.
 const STEP_TEXT = {
-  waiting: "Waiting for the script",
-  painting: "Muse Image is painting",
-  repainting: "Repainting it more clearly",
-  painted: "Muse Spark is finding the parts",
-  looking: "Muse Spark is finding the parts",
-  tracing: "SAM 3.1 is tracing outlines",
+  waiting: "Waiting",
+  painting: "Painting",
+  repainting: "Repainting",
+  painted: "Finding parts",
+  looking: "Finding parts",
+  tracing: "Tracing",
   ready: "Ready",
 };
 const STEP_ORDER = ["waiting", "painting", "painted", "looking", "tracing", "ready"];
@@ -534,7 +642,7 @@ function showBuild(topic) {
   els.makingBg.innerHTML = "";
   const steps = PIPELINE.filter(([k]) => k !== "voice" || serverVoice);
   els.pipeline.innerHTML = steps.map(([k, who, what]) => `<li data-k="${k}"><span class="station"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg></span><b>${who}</b><small>${what}</small></li>`).join("");
-  els.film.innerHTML = Array.from({ length: 5 }, (_, i) => `<li class="shot"><div class="shot-img"><span class="shot-num">${i + 1}</span></div><p class="shot-head"></p><p class="shot-step"></p></li>`).join("");
+  els.film.innerHTML = Array.from({ length: 6 }, (_, i) => `<li class="shot"><div class="shot-img"><span class="shot-num">${i + 1}</span></div><p class="shot-head"></p><p class="shot-step"></p></li>`).join("");
   updatePipeline();
   tickMaking();
   makingState.timer = setInterval(tickMaking, 1000);

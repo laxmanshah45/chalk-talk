@@ -4,6 +4,8 @@ An animated tutor built on Meta Model API for the Meta Global AI Developer Hacka
 
 You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it. Raise your hand at any time to ask a question out loud; when you pause, the tutor knows you're done and answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
 
+**Snap your textbook:** drop a photo of a textbook diagram on the home page (or paste one, or click the camera), optionally ask a question about it, and Chalk Talk teaches a lesson about *your* picture. SAM 3.1 traces the real parts on your photo, and Muse Spark has a new chalk drawing painted only for scenes the photo can't show.
+
 ## How it works
 
 Four Meta models work together on every lesson:
@@ -36,7 +38,7 @@ Every lesson you make is saved in the `lessons/` folder and listed under the top
 
 ## What a lesson costs
 
-About 16 cents of API credit for a five-scene lesson. A measured example: script 4.2¢, five pictures 5¢, finding parts 5.7¢, tracing 1.25¢. A repainted picture adds about 2¢. Each raised-hand question is about 1 cent. Narration with Kokoro and the "Find it" round are free because they run locally.
+Lessons have 6 to 8 scenes and cost about 20 to 26 cents of API credit; each scene adds a picture (1¢), finding its parts (about 1.2¢) and tracing (0.25¢), and a repainted picture adds about 2¢. A lesson from your photo costs less, since its photo scenes need no painting: a measured 7-scene photo lesson cost 16 cents. Each raised-hand question is about 1 cent. Narration with Kokoro and the "Find it" round are free because they run locally.
 
 ## Before you push to GitHub
 

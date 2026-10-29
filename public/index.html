@@ -48,9 +48,17 @@
             <form id="topic-form" class="ask" autocomplete="off">
               <label for="topic" class="sr-only">What do you want to learn?</label>
               <div class="ask-box">
+                <button id="photo-btn" type="button" class="photo-btn" aria-label="Add a picture" title="Add a picture, like a photo of a textbook diagram">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h3l1.6-2.2h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg>
+                </button>
+                <span id="photo-chip" class="photo-chip" hidden>
+                  <img id="photo-thumb" alt="">
+                  <button id="photo-remove" type="button" class="photo-remove" aria-label="Remove the picture" title="Remove the picture">&times;</button>
+                </span>
                 <input id="topic" name="topic" type="text" class="chalk" placeholder="What do you want to learn?" maxlength="300">
                 <button id="make" type="submit" class="primary">Make lesson <span aria-hidden="true">&rarr;</span></button>
               </div>
+              <input id="photo-input" type="file" accept="image/*" hidden>
               <div class="choice-row levels" role="radiogroup" aria-label="Level">
                 <span class="choice-label" aria-hidden="true">For</span>
                 <span class="choice-options">
@@ -68,10 +76,19 @@
                   <button type="button" class="idea">How does the heart pump blood?</button>
                 </span>
               </div>
+              <div class="choice-row snap">
+                <span class="choice-label">Or add</span>
+                <span class="choice-options"><button id="snap" type="button" class="snap-btn">a textbook diagram</button><span class="snap-hint">&nbsp;or drop a photo here</span></span>
+              </div>
               <p id="ask-error" class="ask-error" role="alert"></p>
             </form>
           </div>
 
+          <!-- Shown while a picture is dragged over the page. -->
+          <div id="drop-zone" class="drop-zone chalk" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h3l1.6-2.2h6.8L17 8.5h3v10H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg>
+            <span>Drop your picture to make a lesson about it</span>
+          </div>
           <button id="sample" type="button" class="demo" aria-label="Play the sample lesson, How Volcanoes Erupt">
             <span id="demo-caption" class="demo-caption chalk" aria-hidden="true"></span>
             <svg id="preview" class="demo-svg" aria-hidden="true"></svg>
