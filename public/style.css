@@ -389,6 +389,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   pointer-events: none;
 }
 .ask-bubble p { margin: 0; font-size: clamp(1rem, 2vw, 1.35rem); line-height: 1.2; }
+/* While listening, the bubble has its own Done and Cancel buttons, right where you're looking. */
+.ask-bubble[data-state="listening"] { pointer-events: auto; }
+.ask-done, .ask-cancel { display: none; font-family: var(--hand); font-weight: 400; }
+.ask-bubble[data-state="listening"] .ask-done,
+.ask-bubble[data-state="listening"] .ask-cancel { display: inline-block; }
+.ask-done {
+  margin-left: 0.4rem;
+  padding: 0.3rem 1.1rem;
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  color: #1C2A26;
+  background: var(--chalk-yellow);
+  border: 0;
+  border-radius: 12px 9px 13px 8px;
+}
+.ask-cancel {
+  padding: 0.3rem 0.2rem;
+  font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+  color: var(--chalk-dim);
+  border: 0;
+  text-decoration: underline;
+}
 .ask-bubble[data-state="listening"] { border-color: #F4A3A3; }
 .ask-bubble[data-state="thinking"], .ask-bubble[data-state="answering"] { border-color: var(--chalk-yellow); }
 .ask-meter { display: flex; align-items: center; gap: 3px; height: 1.6rem; flex: none; }

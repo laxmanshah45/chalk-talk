@@ -2,7 +2,7 @@
 
 An animated tutor built on Meta Model API for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Every line in this repository was written during the hackathon.
 
-You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it, while the camera moves in on it. Raise your hand at any time to ask a question out loud, and the tutor answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
+You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it, while the camera moves in on it. Raise your hand at any time to ask a question out loud; when you pause, the tutor knows you're done and answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
 
 ## How it works
 

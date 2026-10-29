@@ -13,6 +13,7 @@ const els = {
   replay: $("#replay"), hand: $("#hand"), dots: $("#dots"), quiz: $("#quiz"),
   handPanel: $("#hand-panel"), handStatus: $("#hand-status"), handForm: $("#hand-form"),
   handText: $("#hand-text"), handClose: $("#hand-close"), bubble: $("#ask-bubble"), bubbleText: $("#ask-bubble-text"),
+  askDone: $("#ask-done"), askCancel: $("#ask-cancel"),
   voice: $("#voice"), rate: $("#rate"), voiceNote: $("#voice-note"), browserVoiceRow: $("#browser-voice-row"),
 };
 
@@ -1204,6 +1205,12 @@ function updateButtons() {
 // Keyboard: Space plays or pauses, arrows change scene, H raises your hand.
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  // While listening, Space or Enter means "I'm done asking".
+  if (rec && (e.key === " " || e.key === "Enter")) {
+    e.preventDefault();
+    sendRecording();
+    return;
+  }
   const press = (btn) => { if (!btn.disabled) { e.preventDefault(); btn.click(); } };
   if (e.key === " " && e.target.tagName !== "BUTTON") press(els.play);
   else if (e.key === "ArrowRight") press(els.next);
@@ -1378,6 +1385,8 @@ els.handForm.addEventListener("submit", (e) => {
   askQuestion({ question });
 });
 els.handClose.addEventListener("click", () => backToLesson());
+els.askDone.addEventListener("click", () => { if (rec) sendRecording(); });
+els.askCancel.addEventListener("click", () => backToLesson());
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !els.handPanel.hidden) backToLesson(); });
 
 function openHand() {
@@ -1466,21 +1475,47 @@ async function startRecording() {
     source.connect(node);
     source.connect(analyser);
     node.connect(ctx.destination);
-    rec = { stream, ctx, source, node, chunks, raf: 0, timer: setTimeout(() => sendRecording(), 30000) };
-    // Live level meter, so it's obvious the microphone can hear you.
+    rec = { stream, ctx, source, node, chunks, tick: 0, timer: setTimeout(() => sendRecording(), 30000) };
+    setHandButton(true);
+    els.handStatus.textContent = "Listening… ask your question. I'll know you're done when you pause.";
+    setBubble("listening", "Listening… ask your question");
+    els.askDone.focus({ preventScroll: true });
+
+    // Every 50 ms: move the level meter, and listen for the end of the question.
+    // Once you've spoken, a pause of about 1.4 seconds sends it; there's no button to hunt for.
+    // The speech threshold follows the room's background noise, so a noisy room doesn't count as talking.
     const buf = new Float32Array(analyser.fftSize);
-    const meter = () => {
+    const started = performance.now();
+    let noise = 0.01, voiced = 0, speaking = false, quietSince = 0, last = started;
+    rec.tick = setInterval(() => {
       if (rec?.ctx !== ctx) return;
       analyser.getFloatTimeDomainData(buf);
       let sum = 0;
       for (const v of buf) sum += v * v;
-      setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 7));
-      rec.raf = requestAnimationFrame(meter);
-    };
-    setHandButton(true);
-    els.handStatus.textContent = "Listening… ask your question, then press Done asking.";
-    setBubble("listening", "Listening… ask your question");
-    meter();
+      const level = Math.sqrt(sum / buf.length);
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      setLevel(Math.min(1, level * 7));
+      noise = level < noise ? Math.max(0.002, level) : noise + (level - noise) * 0.004;
+      const loud = level > Math.max(0.015, noise * 3);
+      if (loud) {
+        quietSince = 0;
+        voiced += dt;
+        if (!speaking && voiced > 250) {
+          speaking = true;
+          els.bubbleText.textContent = "Listening… pause when you're done";
+        }
+      } else if (speaking) {
+        quietSince ||= now;
+        if (now - quietSince > 1400) sendRecording();
+      } else if (now - started > 10000) {
+        // Ten seconds without a word: stop listening rather than send silence.
+        stopRecording();
+        els.handStatus.textContent = "I didn’t hear anything. Press Raise hand to try again, or type your question.";
+        setBubble(null);
+      }
+    }, 50);
   } catch {
     els.handStatus.textContent = "The microphone is blocked. Type your question instead.";
     els.handText.focus();
@@ -1492,7 +1527,7 @@ async function stopRecording() {
   rec = null;
   if (!r) return null;
   clearTimeout(r.timer);
-  cancelAnimationFrame(r.raf);
+  clearInterval(r.tick);
   r.node.disconnect();
   r.source.disconnect();
   r.stream.getTracks().forEach((t) => t.stop());
@@ -1510,6 +1545,7 @@ function cancelRecording() {
 }
 
 async function sendRecording() {
+  if (!rec) return; // already sent (Done, Space and a pause can all arrive together)
   const wav = await stopRecording();
   if (!wav) {
     els.handStatus.textContent = "I didn’t hear anything. Press Raise hand to try again, or type your question.";

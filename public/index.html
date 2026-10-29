@@ -59,7 +59,7 @@
     <ol class="howto-steps">
       <li><b>Pick a topic</b><span>Type anything you're curious about, or play the sample lesson first.</span></li>
       <li><b>Watch it draw</b><span>Each part of the picture is traced, coloured in and labelled the moment the tutor mentions it.</span></li>
-      <li><b>Raise your hand</b><span>Ask out loud or type a question at any time. The tutor answers by pointing at the picture.</span></li>
+      <li><b>Raise your hand</b><span>Ask out loud at any time, then just pause: the tutor knows you're done and answers by pointing at the picture.</span></li>
       <li><b>Find it</b><span>At the end, tap the parts on the picture, then answer one quick question.</span></li>
     </ol>
     <p class="howto-models">Made by four Meta models working together: Muse Spark writes the lesson and looks at every picture, Muse Image paints it, SAM 3.1 traces each part, and Muse Voice Transcribe hears your questions.</p>
@@ -84,9 +84,11 @@
         <p id="board-status" class="chalk status">Pick a topic above, or start with the sample.</p>
         <button id="sample" type="button" class="board-cta"><span aria-hidden="true">&#9654;</span> Play the sample lesson</button>
         <!-- Raise your hand, on the board: listening (with a mic level meter), thinking, answering. -->
-        <div id="ask-bubble" class="ask-bubble" hidden aria-hidden="true">
-          <span class="ask-meter"><i></i><i></i><i></i><i></i><i></i></span>
-          <p id="ask-bubble-text" class="chalk"></p>
+        <div id="ask-bubble" class="ask-bubble" hidden>
+          <span class="ask-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <p id="ask-bubble-text" class="chalk" aria-live="polite"></p>
+          <button id="ask-done" type="button" class="ask-done">Done</button>
+          <button id="ask-cancel" type="button" class="ask-cancel">Cancel</button>
         </div>
         <div id="wipe" class="wipe" aria-hidden="true"></div>
       </div>
