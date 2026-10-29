@@ -36,6 +36,28 @@ Click "Play the sample lesson" first. It works without an API key, so you can se
 
 Every lesson you make is saved in the `lessons/` folder and listed under the topic box, so you can replay it instantly.
 
+## Run it on a server
+
+Chalk Talk ships with a `Dockerfile` and `compose.yml` for running it behind a web server that handles HTTPS, such as Caddy. HTTPS matters: browsers only allow the microphone on secure sites.
+
+1. Clone this repository on the server and copy your `.env` (with `MODEL_API_KEY`) next to `compose.yml`.
+2. Tell compose which Docker network your web server is on, in a `compose.override.yml` or in `.env`: `PROXY_NETWORK=your_network`.
+3. Run `docker compose up -d --build`. The image downloads the Kokoro voice while it builds.
+4. Point your web server at `chalktalk:3000`, for example in a Caddyfile:
+
+   ```
+   chalktalk.example.com {
+   	request_body {
+   		max_size 12MB
+   	}
+   	reverse_proxy chalktalk:3000 {
+   		flush_interval -1
+   	}
+   }
+   ```
+
+On a public server the defaults keep costs in check: 40 new lessons a day (5 per visitor), 30 questions per visitor, and at most 2 lessons being made at once. Visitors see the sample, any lessons you list in `FEATURED_LESSONS`, and their own lessons. All of these are set in `compose.yml` and can be changed in `.env`.
+
 ## What a lesson costs
 
 Lessons have 6 to 8 scenes and cost about 20 to 26 cents of API credit; each scene adds a picture (1¢), finding its parts (about 1.2¢) and tracing (0.25¢), and a repainted picture adds about 2¢. A lesson from your photo costs less, since its photo scenes need no painting: a measured 7-scene photo lesson cost 16 cents. Each raised-hand question is about 1 cent. Narration with Kokoro and the "Find it" round are free because they run locally.

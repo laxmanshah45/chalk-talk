@@ -1,0 +1,27 @@
+# Runs Chalk Talk on a server, behind a web server (like Caddy) that handles HTTPS.
+# The API key stays in .env next to this file. Every setting below can be changed there too.
+services:
+  chalktalk:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./lessons:/app/lessons
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      TRUST_PROXY: "1"
+      LESSONS_PER_DAY: ${LESSONS_PER_DAY:-40}
+      LESSONS_PER_VISITOR_PER_DAY: ${LESSONS_PER_VISITOR_PER_DAY:-5}
+      QUESTIONS_PER_DAY: ${QUESTIONS_PER_DAY:-300}
+      QUESTIONS_PER_VISITOR_PER_DAY: ${QUESTIONS_PER_VISITOR_PER_DAY:-30}
+      MAX_BUILDS_AT_ONCE: ${MAX_BUILDS_AT_ONCE:-2}
+      GALLERY: ${GALLERY:-private}
+      FEATURED_LESSONS: ${FEATURED_LESSONS:-}
+    networks: [proxy]
+
+# The web server's Docker network, so it can reach this app by the name "chalktalk".
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}
