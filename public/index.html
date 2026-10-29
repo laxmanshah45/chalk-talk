@@ -4,132 +4,290 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chalk Talk</title>
+  <meta name="description" content="Learn anything on a chalkboard that draws itself. Four Meta models paint, trace and explain any topic, and answer when you raise your hand.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect x='4' y='8' width='40' height='30' rx='3' fill='%2324453C' stroke='%238C6B4B' stroke-width='3'/%3E%3Cpath d='M11 29c4-9 8-12 11-5s7 3 11-9' fill='none' stroke='%23F6D55C' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Patrick+Hand&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header class="top">
-    <div class="brand-row">
-      <h1 class="brand">
+<body data-view="home">
+  <div class="ambience" aria-hidden="true"></div>
+
+  <!-- ================= Home ================= -->
+  <section class="view home" data-view="home">
+    <header class="nav wrap">
+      <a class="brand" href="#/" aria-label="Chalk Talk home">
         <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
           <rect x="4" y="8" width="40" height="30" rx="3" fill="#24453C" stroke="#8C6B4B" stroke-width="3"/>
           <path d="M11 29c4-9 8-12 11-5s7 3 11-9" fill="none" stroke="#F6D55C" stroke-width="2.6" stroke-linecap="round"/>
           <rect x="28" y="36" width="12" height="5" rx="2" fill="#F1F3EE" transform="rotate(-12 34 38)"/>
         </svg>
-        Chalk Talk
-      </h1>
-      <button id="howto-open" type="button" class="link">How it works</button>
-    </div>
-    <p class="tagline">Type any topic. A tutor paints it on a chalkboard, traces each part as it explains, and answers when you raise your hand.</p>
-  </header>
+        <span>Chalk Talk</span>
+      </a>
+      <nav class="nav-links">
+        <button id="how-link" type="button" class="ghost">How it works</button>
+        <a class="ghost" href="https://github.com/laxmanshah45/chalk-talk" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </header>
 
-  <form id="topic-form" class="ask">
-    <label for="topic" class="ask-label">What do you want to learn?</label>
-    <div class="ask-row">
-      <input id="topic" name="topic" type="text" autocomplete="off" placeholder="How do volcanoes erupt?" maxlength="300">
-      <select id="level" aria-label="Student level">
-        <option value="elementary school">Elementary</option>
-        <option value="middle school" selected>Middle school</option>
-        <option value="high school">High school</option>
-        <option value="college">College</option>
-      </select>
-      <button id="make" type="submit" class="primary">Make lesson</button>
-    </div>
-    <div class="ideas">
-      <span class="ideas-label">Try</span>
-      <button type="button" class="idea">Why is the sky blue?</button>
-      <button type="button" class="idea">How do plants make food from sunlight?</button>
-      <button type="button" class="idea">How does the heart pump blood?</button>
-      <button type="button" class="idea">What is inside an atom?</button>
-    </div>
-    <p id="ask-error" class="ask-error" role="alert"></p>
-  </form>
+    <!-- The hero is a chalkboard: the headline is chalked on it, and real lesson scenes
+         from the sample draw themselves on its right-hand side. -->
+    <div class="hero wrap">
+      <div class="hero-frame">
+        <div class="hero-board">
+          <div class="hero-copy">
+            <p class="hero-kicker chalk">Four Meta models &middot; one chalkboard</p>
+            <h1 class="hero-title chalk">
+              <span class="line">Learn anything on</span>
+              <span class="line">a chalkboard that</span>
+              <span class="line"><em>draws itself.<svg class="scribble" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><path d="M4 16c40-9 92-12 150-8s98 7 142-3" pathLength="1"/></svg></em></span>
+            </h1>
+            <p class="hero-sub">Type any topic. Your tutor paints it, traces each part as it talks, and answers when you raise your hand.</p>
 
-  <section class="library" aria-labelledby="library-title">
-    <h2 id="library-title" class="library-title">Lessons</h2>
-    <div id="saved" class="saved"></div>
-  </section>
+            <form id="topic-form" class="ask" autocomplete="off">
+              <label for="topic" class="sr-only">What do you want to learn?</label>
+              <div class="ask-box">
+                <input id="topic" name="topic" type="text" class="chalk" placeholder="What do you want to learn?" maxlength="300">
+                <button id="make" type="submit" class="primary">Make lesson <span aria-hidden="true">&rarr;</span></button>
+              </div>
+              <div class="choice-row levels" role="radiogroup" aria-label="Level">
+                <span class="choice-label" aria-hidden="true">For</span>
+                <span class="choice-options">
+                  <label><input type="radio" name="level" value="elementary school"><span>Elementary</span></label>
+                  <label><input type="radio" name="level" value="middle school" checked><span>Middle school</span></label>
+                  <label><input type="radio" name="level" value="high school"><span>High school</span></label>
+                  <label><input type="radio" name="level" value="college"><span>College</span></label>
+                </span>
+              </div>
+              <div class="choice-row ideas">
+                <span class="choice-label">Or try</span>
+                <span class="choice-options">
+                  <button type="button" class="idea">Why is the sky blue?</button>
+                  <button type="button" class="idea">What is inside an atom?</button>
+                  <button type="button" class="idea">How does the heart pump blood?</button>
+                </span>
+              </div>
+              <p id="ask-error" class="ask-error" role="alert"></p>
+            </form>
+          </div>
 
-  <!-- Quick start: shown on the first visit, and from "How it works". -->
-  <section id="howto" class="howto" aria-labelledby="howto-title" hidden>
-    <h2 id="howto-title" class="howto-title">How to use Chalk Talk</h2>
-    <ol class="howto-steps">
-      <li><b>Pick a topic</b><span>Type anything you're curious about, or play the sample lesson first.</span></li>
-      <li><b>Watch it draw</b><span>Each part of the picture is traced, coloured in and labelled the moment the tutor mentions it.</span></li>
-      <li><b>Raise your hand</b><span>Ask out loud at any time, then just pause: the tutor knows you're done and answers by pointing at the picture.</span></li>
-      <li><b>Find it</b><span>At the end, tap the parts on the picture, then answer one quick question.</span></li>
-    </ol>
-    <p class="howto-models">Made by four Meta models working together: Muse Spark writes the lesson and looks at every picture, Muse Image paints it, SAM 3.1 traces each part, and Muse Voice Transcribe hears your questions.</p>
-    <div class="howto-foot">
-      <p class="howto-keys"><kbd>Space</kbd> play or pause <kbd>&larr;</kbd> <kbd>&rarr;</kbd> change scene <kbd>H</kbd> raise hand <kbd>Esc</kbd> back to the lesson</p>
-      <button id="howto-close" type="button" class="primary">Got it</button>
-    </div>
-  </section>
-
-  <main class="stage">
-    <p id="lesson-title" class="lesson-title"></p>
-
-    <div class="frame">
-      <div id="board" class="board">
-        <!-- The scene picture: painted by Muse Image, parts traced from SAM 3.1 outlines. -->
-        <svg id="picture" class="picture" hidden aria-hidden="true"></svg>
-        <!-- Chalk cards, used when a scene has no picture. -->
-        <div id="visuals" class="visuals"></div>
-        <h2 id="scene-heading" class="chalk heading">Your lesson appears here</h2>
-        <!-- Shows each Meta model's step while a new lesson is being made. -->
-        <div id="build" class="build" hidden></div>
-        <p id="board-status" class="chalk status">Pick a topic above, or start with the sample.</p>
-        <button id="sample" type="button" class="board-cta"><span aria-hidden="true">&#9654;</span> Play the sample lesson</button>
-        <!-- Raise your hand, on the board: listening (with a mic level meter), thinking, answering. -->
-        <div id="ask-bubble" class="ask-bubble" hidden>
-          <span class="ask-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-          <p id="ask-bubble-text" class="chalk" aria-live="polite"></p>
-          <button id="ask-done" type="button" class="ask-done">Done</button>
-          <button id="ask-cancel" type="button" class="ask-cancel">Cancel</button>
+          <button id="sample" type="button" class="demo" aria-label="Play the sample lesson, How Volcanoes Erupt">
+            <span id="demo-caption" class="demo-caption chalk" aria-hidden="true"></span>
+            <svg id="preview" class="demo-svg" aria-hidden="true"></svg>
+            <span class="demo-play"><span class="play-icon" aria-hidden="true">&#9654;</span> Play this lesson</span>
+          </button>
         </div>
-        <div id="wipe" class="wipe" aria-hidden="true"></div>
+        <!-- The ledge under the board, with chalk and an eraser lying on it. -->
+        <div class="ledge" aria-hidden="true"><i class="stick"></i><i class="stick yellow"></i><i class="eraser"></i></div>
       </div>
+
+      <p class="powered">
+        <span class="powered-label">Powered by Meta Model API</span>
+        <span class="chip">Muse Spark</span>
+        <span class="chip">Muse Image</span>
+        <span class="chip">SAM 3.1</span>
+        <span class="chip">Muse Voice Transcribe</span>
+        <span class="powered-note">Narration by Kokoro, running on your computer</span>
+      </p>
     </div>
 
-    <p id="caption" class="caption" aria-live="off"></p>
+    <!-- Shown on the home screen while a lesson is still being made in the background. -->
+    <a id="home-building" class="home-building wrap" href="#/making" hidden></a>
 
-    <div class="controls">
-      <button id="prev" type="button" disabled>Back</button>
-      <button id="play" type="button" class="primary" disabled>Play</button>
-      <button id="next" type="button" disabled>Next</button>
-      <button id="replay" type="button" disabled>Replay scene</button>
-      <button id="hand" type="button" class="hand" disabled aria-pressed="false"><span aria-hidden="true">✋</span> Raise hand</button>
-      <div id="dots" class="dots" role="group" aria-label="Scenes"></div>
-    </div>
-
-    <!-- Raise your hand: speak (Muse Voice Transcribe) or type, and Muse Spark answers on the board. -->
-    <section id="hand-panel" class="hand-panel" hidden aria-live="polite">
-      <p id="hand-status" class="hand-status"></p>
-      <form id="hand-form" class="hand-form">
-        <input id="hand-text" type="text" autocomplete="off" maxlength="300" placeholder="Or type your question" aria-label="Your question">
-        <button type="submit">Ask</button>
-        <button id="hand-close" type="button" class="link">Back to the lesson</button>
-      </form>
+    <section class="library wrap" aria-labelledby="library-title">
+      <div class="section-head">
+        <div>
+          <h2 id="library-title">Lessons</h2>
+          <p>Every lesson you make is saved here, ready to replay instantly.</p>
+        </div>
+        <button id="see-all" type="button" class="ghost see-all" aria-expanded="false" hidden></button>
+      </div>
+      <div id="saved" class="saved"></div>
     </section>
 
-    <section id="quiz" class="quiz" hidden></section>
+    <section id="how" class="how wrap" aria-labelledby="how-title">
+      <div class="section-head">
+        <h2 id="how-title">How it works</h2>
+        <p>Four Meta models work together on every lesson, in about a minute and a half.</p>
+      </div>
+      <ol class="how-steps">
+        <li>
+          <span class="how-num">1</span>
+          <h3>Write</h3>
+          <p>Muse Spark writes the lesson: scenes, narration, a picture plan, and the parts to point at.</p>
+          <span class="chip">Muse Spark</span>
+        </li>
+        <li>
+          <span class="how-num">2</span>
+          <h3>Paint and check</h3>
+          <p>Muse Image paints every scene at once. Muse Spark looks at each picture, marks each part, and asks for a repaint if it isn't clear.</p>
+          <span class="chip">Muse Image</span> <span class="chip">Muse Spark</span>
+        </li>
+        <li>
+          <span class="how-num">3</span>
+          <h3>Trace</h3>
+          <p>SAM 3.1 outlines each part exactly, so the board can trace it in chalk the moment the tutor mentions it.</p>
+          <span class="chip">SAM 3.1</span>
+        </li>
+        <li>
+          <span class="how-num">4</span>
+          <h3>Ask</h3>
+          <p>Raise your hand and ask out loud. Muse Voice Transcribe hears you, and Muse Spark answers by pointing at the picture.</p>
+          <span class="chip">Muse Voice Transcribe</span>
+        </li>
+      </ol>
+    </section>
 
-    <details class="settings">
-      <summary>Voice settings</summary>
-      <p id="voice-note" class="voice-note"></p>
-      <div class="settings-row" id="browser-voice-row">
-        <label for="voice">Voice</label>
-        <select id="voice"></select>
+    <footer class="foot wrap">
+      <p>Built for the Meta Global AI Developer Hackathon. Narration by Kokoro, an open-weight voice running on your computer.</p>
+    </footer>
+  </section>
+
+  <!-- ================= Making a lesson ================= -->
+  <section class="view making" data-view="making" hidden>
+    <div id="making-bg" class="making-bg" aria-hidden="true"></div>
+    <header class="nav wrap">
+      <a class="brand" href="#/" aria-label="Chalk Talk home">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="4" y="8" width="40" height="30" rx="3" fill="#24453C" stroke="#8C6B4B" stroke-width="3"/>
+          <path d="M11 29c4-9 8-12 11-5s7 3 11-9" fill="none" stroke="#F6D55C" stroke-width="2.6" stroke-linecap="round"/>
+          <rect x="28" y="36" width="12" height="5" rx="2" fill="#F1F3EE" transform="rotate(-12 34 38)"/>
+        </svg>
+        <span>Chalk Talk</span>
+      </a>
+      <a class="ghost" href="#/">&larr; Home</a>
+    </header>
+
+    <div class="making-inner wrap">
+      <p class="eyebrow"><span class="pulse-dot live"></span> Making your lesson</p>
+      <h1 id="making-title" class="making-title"></h1>
+      <p id="making-stage" class="making-stage" aria-live="polite"></p>
+
+      <div class="progress" role="progressbar" aria-label="Lesson progress" aria-valuemin="0" aria-valuemax="100">
+        <div id="making-bar" class="progress-bar"></div>
       </div>
-      <div class="settings-row">
-        <label for="rate">Speed</label>
-        <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1">
+      <p class="making-time"><span id="making-time">0:00</span> <span class="faint">&middot; usually about a minute and a half</span></p>
+
+      <ol id="pipeline" class="pipeline" aria-label="What each model is doing"></ol>
+      <ol id="film" class="film" aria-label="Scenes"></ol>
+
+      <div id="making-ready" class="making-ready" hidden>
+        <div>
+          <p class="ready-title">Scene 1 is ready</p>
+          <p id="start-count" class="ready-sub"></p>
+        </div>
+        <button id="start-lesson" type="button" class="primary big"><span aria-hidden="true">&#9654;</span> Start the lesson</button>
       </div>
-    </details>
-  </main>
+      <div id="making-error" class="making-error" role="alert" hidden>
+        <p id="making-error-text"></p>
+        <a class="primary" href="#/">Back to home</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= The lesson ================= -->
+  <section class="view lesson" data-view="lesson" hidden>
+    <main class="stage wrap">
+      <!-- The player: board, subtitles, controls and the raised hand. Full screen shows just this. -->
+      <div id="player" class="player">
+      <div class="frame">
+        <div id="board" class="board">
+          <!-- The scene picture: painted by Muse Image, parts traced from SAM 3.1 outlines. -->
+          <svg id="picture" class="picture" hidden aria-hidden="true"></svg>
+          <!-- Chalk cards, used when a scene has no picture. -->
+          <div id="visuals" class="visuals"></div>
+          <h2 id="scene-heading" class="chalk heading"></h2>
+          <p id="board-status" class="chalk status"></p>
+          <!-- Raise your hand, on the board: listening (with a mic level meter), thinking, answering. -->
+          <div id="ask-bubble" class="ask-bubble" hidden>
+            <span class="ask-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <p id="ask-bubble-text" class="chalk" aria-live="polite"></p>
+            <button id="ask-done" type="button" class="ask-done">Done</button>
+            <button id="ask-cancel" type="button" class="ask-cancel">Cancel</button>
+          </div>
+          <div id="wipe" class="wipe" aria-hidden="true"></div>
+        </div>
+        <div class="ledge" aria-hidden="true"><i class="stick"></i><i class="stick yellow"></i><i class="eraser"></i></div>
+      </div>
+
+      <!-- Subtitles under the board: the sentence being spoken, word by word. -->
+      <p id="caption" class="caption" aria-live="off"></p>
+
+      <div class="controls">
+        <div class="where">
+          <a class="icon-btn back" href="#/" aria-label="All lessons" title="All lessons">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+          </a>
+          <div class="where-text">
+            <p id="lesson-title" class="lesson-title"></p>
+            <p class="scene-line"><span id="scene-count" class="scene-count"></span><span id="build-note" class="build-note"></span></p>
+          </div>
+        </div>
+        <div class="transport">
+          <button id="prev" type="button" class="icon-btn" disabled aria-label="Previous scene" title="Previous scene (&larr;)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14"/><path d="M18 6l-9 6 9 6z" class="solid"/></svg>
+          </button>
+          <button id="play" type="button" class="play-btn" disabled aria-label="Play" title="Play or pause (Space)">
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5l11 6.5-11 6.5z" class="solid"/></svg>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" class="solid"/></svg>
+          </button>
+          <button id="next" type="button" class="icon-btn" disabled aria-label="Next scene" title="Next scene (&rarr;)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14"/><path d="M6 6l9 6-9 6z" class="solid"/></svg>
+          </button>
+          <span class="transport-gap" aria-hidden="true"></span>
+          <button id="replay" type="button" class="icon-btn" disabled aria-label="Replay this scene" title="Replay this scene">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>
+          </button>
+          <button id="speed" type="button" class="icon-btn speed" aria-label="Speed: normal" title="Speed">1&times;</button>
+          <button id="cc" type="button" class="icon-btn" aria-pressed="true" aria-label="Subtitles" title="Subtitles">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="3"/><path d="M10.5 10.2a2 2 0 1 0 0 3.6M16.5 10.2a2 2 0 1 0 0 3.6"/></svg>
+          </button>
+          <button id="transcript-btn" type="button" class="icon-btn" aria-pressed="false" aria-controls="transcript" aria-label="Transcript" title="Transcript">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg>
+          </button>
+          <button id="fullscreen" type="button" class="icon-btn" aria-pressed="false" aria-label="Full screen" title="Full screen (F)">
+            <svg class="i-expand" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            <svg class="i-shrink" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+          </button>
+        </div>
+        <button id="hand" type="button" class="hand" disabled aria-pressed="false"><span aria-hidden="true">✋</span> Ask a question <kbd>H</kbd></button>
+      </div>
+
+      <!-- Raise your hand: speak (Muse Voice Transcribe) or type, and Muse Spark answers on the board. -->
+      <section id="hand-panel" class="hand-panel" hidden aria-live="polite">
+        <p id="hand-status" class="hand-status"></p>
+        <form id="hand-form" class="hand-form">
+          <input id="hand-text" type="text" autocomplete="off" maxlength="300" placeholder="Or type your question" aria-label="Your question">
+          <button type="submit">Ask</button>
+          <button id="hand-close" type="button" class="link">Back to the lesson</button>
+        </form>
+      </section>
+
+      </div>
+
+      <section id="transcript" class="transcript" hidden aria-label="Transcript"></section>
+
+      <section id="quiz" class="quiz" hidden></section>
+
+      <div class="lesson-foot">
+        <p id="lesson-note" class="lesson-note"></p>
+        <p class="keys"><kbd>Space</kbd> play or pause <kbd>&larr;</kbd> <kbd>&rarr;</kbd> change scene <kbd>H</kbd> raise hand <kbd>F</kbd> full screen <kbd>Esc</kbd> back to the lesson</p>
+        <details class="settings">
+          <summary>Voice settings</summary>
+          <p id="voice-note" class="voice-note"></p>
+          <div class="settings-row" id="browser-voice-row">
+            <label for="voice">Voice</label>
+            <select id="voice"></select>
+          </div>
+          <div class="settings-row">
+            <label for="rate">Speed</label>
+            <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1">
+          </div>
+        </details>
+      </div>
+    </main>
+  </section>
 
   <script src="/vendor/rough.js"></script>
   <script src="app.js"></script>

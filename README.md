@@ -2,7 +2,7 @@
 
 An animated tutor built on Meta Model API for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Every line in this repository was written during the hackathon.
 
-You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it, while the camera moves in on it. Raise your hand at any time to ask a question out loud; when you pause, the tutor knows you're done and answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
+You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it. Raise your hand at any time to ask a question out loud; when you pause, the tutor knows you're done and answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
 
 ## How it works
 
@@ -17,7 +17,7 @@ When a student raises their hand, **Muse Voice Transcribe** turns the spoken que
 
 Meta Model API has no text-to-speech, so narration uses **Kokoro**, an open-weight voice model that runs on your own computer. Without it, the browser's built-in voice is used instead.
 
-The board shows each model's step live while a lesson is made, and scene 1 starts playing as soon as it's ready. When it's done, the page and the terminal show how long it took and what it cost, worked out from the API's own usage numbers.
+While a lesson is made, a dedicated screen shows each model's step live, the scenes appearing as they're painted, and a progress bar; scene 1 starts playing as soon as it's ready while the rest are still being made. When it's done, the page and the terminal show how long it took and what it cost, worked out from the API's own usage numbers.
 
 Keyboard: <kbd>Space</kbd> play or pause, <kbd>←</kbd> <kbd>→</kbd> change scene, <kbd>H</kbd> raise hand, <kbd>Esc</kbd> back to the lesson.
 

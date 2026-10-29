@@ -187,7 +187,8 @@ function serveFrom(root, urlPath, res) {
 function sendFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) return sendJson(res, 404, { error: "Not found" });
-    res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
+    // Ask browsers to check for a newer copy every time, so a plain refresh always shows the latest page.
+    res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
     res.end(buf);
   });
 }

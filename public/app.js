@@ -5,15 +5,20 @@
 
 const $ = (sel) => document.querySelector(sel);
 const els = {
-  form: $("#topic-form"), topic: $("#topic"), level: $("#level"), make: $("#make"),
+  form: $("#topic-form"), topic: $("#topic"), make: $("#make"),
   sample: $("#sample"), saved: $("#saved"), askError: $("#ask-error"), title: $("#lesson-title"),
   board: $("#board"), picture: $("#picture"), heading: $("#scene-heading"), visuals: $("#visuals"),
-  build: $("#build"), status: $("#board-status"), wipe: $("#wipe"),
+  status: $("#board-status"), wipe: $("#wipe"), preview: $("#preview"), demoCaption: $("#demo-caption"), homeBuilding: $("#home-building"),
+  makingTitle: $("#making-title"), makingStage: $("#making-stage"), makingBar: $("#making-bar"), makingTime: $("#making-time"),
+  makingBg: $("#making-bg"), pipeline: $("#pipeline"), film: $("#film"), makingReady: $("#making-ready"),
+  startLesson: $("#start-lesson"), startCount: $("#start-count"), makingError: $("#making-error"), makingErrorText: $("#making-error-text"),
   caption: $("#caption"), play: $("#play"), prev: $("#prev"), next: $("#next"),
-  replay: $("#replay"), hand: $("#hand"), dots: $("#dots"), quiz: $("#quiz"),
+  replay: $("#replay"), hand: $("#hand"), quiz: $("#quiz"),
   handPanel: $("#hand-panel"), handStatus: $("#hand-status"), handForm: $("#hand-form"),
   handText: $("#hand-text"), handClose: $("#hand-close"), bubble: $("#ask-bubble"), bubbleText: $("#ask-bubble-text"),
   askDone: $("#ask-done"), askCancel: $("#ask-cancel"),
+  speed: $("#speed"), cc: $("#cc"), transcriptBtn: $("#transcript-btn"), transcript: $("#transcript"), sceneCount: $("#scene-count"),
+  player: $("#player"), fullscreen: $("#fullscreen"), buildNote: $("#build-note"), lessonNote: $("#lesson-note"),
   voice: $("#voice"), rate: $("#rate"), voiceNote: $("#voice-note"), browserVoiceRow: $("#browser-voice-row"),
 };
 
@@ -43,6 +48,10 @@ let buildToken = 0;     // bumps when a different lesson is opened, so a running
 let started = false;
 let finishClip = null;  // resolves the clip that's playing, so stop() never leaves it hanging
 let finding = null;     // the "Find it" round after the last scene: { rounds, at, score, round, locked }
+let makingState = null; // the lesson being made: { topic, started (ms), timer, countdown } while the making screen has something to show
+const GALLERY_SLOTS = 3; // saved lessons shown beside the sample before "See all"
+let galleryOpen = false;
+let sampleSummary = null;
 
 // ---------- Startup ----------
 
@@ -53,21 +62,167 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
     : "Narration uses your browser's voice. Run npm install to add the natural Kokoro voice.";
   if (!cfg.hasKey) els.askError.textContent = "Add your Meta Model API key to .env to make new lessons. The sample lesson works without one.";
 }).catch(() => {});
-document.fonts?.load('64px "Patrick Hand"');
+document.fonts?.load('64px "Patrick Hand"').then(startDemo, startDemo);
 refreshSaved();
+$("#how-link").addEventListener("click", () => $("#how").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" }));
 
-// Quick start guide: open on the first visit, remember once it's dismissed.
-const howto = $("#howto");
-const HOWTO_SEEN = "chalk-talk-howto-seen";
-try { if (!localStorage.getItem(HOWTO_SEEN)) howto.hidden = false; } catch { howto.hidden = false; }
-$("#howto-open").addEventListener("click", () => {
-  howto.hidden = !howto.hidden;
-  if (!howto.hidden) howto.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
-});
-$("#howto-close").addEventListener("click", () => {
-  howto.hidden = true;
-  try { localStorage.setItem(HOWTO_SEEN, "1"); } catch {}
-});
+// ---------- Screens: home, making a lesson, the lesson ----------
+// Each screen has its own address (#/, #/making, #/lesson), so the browser's back button works.
+
+const currentView = () => document.body.dataset.view;
+
+// `replace` swaps the current history entry, so Back from a lesson skips the finished making screen.
+function go(name, { replace = false } = {}) {
+  const hash = name === "home" ? "#/" : `#/${name}`;
+  if (location.hash === hash) route();
+  else if (replace) { history.replaceState(null, "", hash); route(); }
+  else location.hash = hash;
+}
+
+function route() {
+  let name = location.hash.replace(/^#\/?/, "") || "home";
+  if (!["home", "making", "lesson"].includes(name)) name = "home";
+  // Nothing to show on these screens after a reload: start at home.
+  if (name === "lesson" && !(lesson && started)) name = "home";
+  if (name === "making" && !makingState) name = lesson && started ? "lesson" : "home";
+  if (name !== "lesson" && currentView() === "lesson") {
+    // Leaving the lesson: stop talking, put the hand down, leave full screen.
+    exitFullscreen();
+    stop();
+    endFinding();
+    closeHand();
+  }
+  if (name !== "making") stopCountdown();
+  if (name === "home") { refreshSaved(); updateHomeBuilding(); }
+  for (const v of document.querySelectorAll(".view")) v.hidden = v.dataset.view !== name;
+  document.body.dataset.view = name;
+  window.scrollTo(0, 0);
+  // Back on the making screen with scene 1 already done: offer to start again.
+  if (name === "making" && ready[0] && !started) showReady();
+}
+window.addEventListener("hashchange", route);
+route();
+
+// ---------- Home: real lesson scenes drawing themselves on the hero board ----------
+
+let demo = null; // { scenes: [{ scene, n }], at, timers }
+
+async function startDemo() {
+  try {
+    const data = await fetch(`${SAMPLE}lesson.json`).then((r) => r.json());
+    // The eruption first, then the rest; skip any scene without outlines.
+    const scenes = [3, 0, 1, 4, 2]
+      .map((i) => ({ scene: data.scenes[i], n: i + 1 }))
+      .filter(({ scene }) => scene?.image && scene.parts.some((p) => p.shape));
+    if (!scenes.length) return;
+    demo = { scenes, at: 0, timers: [] };
+    showDemo();
+  } catch {
+    // The demo is decoration; the sample still plays if it fails.
+  }
+}
+
+// One scene: fade in a faint sketch, then light up, trace and label each part in turn,
+// show the finished picture, and fade to the next scene.
+function showDemo() {
+  demo.timers.forEach(clearTimeout);
+  demo.timers = [];
+  const later = (ms, fn) => demo.timers.push(setTimeout(fn, ms));
+  // Only animate while the home screen is on show.
+  if (currentView() !== "home" || document.hidden) { later(1000, showDemo); return; }
+  const { scene, n } = demo.scenes[demo.at % demo.scenes.length];
+  els.preview.classList.add("out");
+  els.demoCaption.style.opacity = "0";
+  later(demo.started ? 700 : 0, () => {
+    demo.started = true;
+    const parts = drawDemoScene(els.preview, scene);
+    els.demoCaption.textContent = `Scene ${n} · ${scene.heading}`;
+    els.demoCaption.style.opacity = "1";
+    els.preview.classList.remove("out");
+    const reveal = (part, on) => { part.lit.classList.toggle("on", on); part.g.classList.toggle("on", on); };
+    if (reduceMotion) { parts.forEach((p) => reveal(p, true)); return; }
+    const step = 1700;
+    parts.forEach((part, k) => later(900 + k * step, () => {
+      parts.forEach((o) => { if (o !== part && o.g.classList.contains("on")) o.g.classList.add("rest"); });
+      reveal(part, true);
+    }));
+    const end = 900 + parts.length * step + 700;
+    later(end, () => {
+      parts.forEach((o) => o.g.classList.add("rest"));
+      els.preview.querySelector(".dm-full")?.classList.add("on");
+    });
+    later(end + 2800, () => { demo.at++; showDemo(); });
+  });
+}
+
+// The lesson board in miniature. The pictures sit in a mask that fades their edges into
+// the hero's chalkboard; the chalk outlines and labels stay crisp on top.
+function drawDemoScene(root, scene) {
+  const { width: W, height: H, src } = scene.image;
+  const href = `${SAMPLE}${src}`;
+  const id = `dm${++uid}`;
+  root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  root.innerHTML = "";
+  const defs = svg("defs", {}, root);
+  defs.innerHTML = `
+    <filter id="${id}-sketch"><feColorMatrix type="saturate" values="0.15"/></filter>
+    <radialGradient id="${id}-fade" cx="50%" cy="52%" r="60%"><stop offset="62%" stop-color="#fff"/><stop offset="100%" stop-color="#000"/></radialGradient>
+    <mask id="${id}-mask"><rect width="${W}" height="${H}" fill="url(#${id}-fade)"/></mask>`;
+  const pictures = svg("g", { mask: `url(#${id}-mask)` }, root);
+  svg("image", { href, width: W, height: H, class: "dm-sketch", filter: `url(#${id}-sketch)` }, pictures);
+  svg("image", { href, width: W, height: H, class: "dm-full" }, pictures);
+
+  const shapes = scene.parts.map((p) => p.shape || null);
+  const layout = layoutLabels(scene.parts, shapes, W, H, 1.7);
+  const parts = [];
+  scene.parts.forEach((p, k) => {
+    if (!shapes[k]) return;
+    const clip = svg("clipPath", { id: `${id}-c${k}` }, defs);
+    svg("path", { d: polygonPath(shapes[k].contours), "clip-rule": "evenodd" }, clip);
+    const lit = svg("image", { href, width: W, height: H, class: "dm-lit", "clip-path": `url(#${id}-c${k})` }, pictures);
+    const g = svg("g", { class: "dm-part" }, root);
+    for (const c of shapes[k].contours) svg("path", { d: smoothPath(c), pathLength: 1, class: "dm-trace" }, g);
+    const [x1, y1, x2, y2] = layout[k].rect;
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    if (!layout[k].inside) {
+      const target = arrowTarget(shapes[k], cx, cy);
+      const start = rectExit([x1 - 10, y1 - 6, x2 + 10, y2 + 6], cx, cy, target[0], target[1]);
+      for (const d of arrowPaths(start, target, k)) svg("path", { d, pathLength: 1, class: "dm-arrow" }, g);
+    }
+    const t = svg("text", { x: cx, y: cy, "font-size": layout[k].fontSize, "text-anchor": "middle", "dominant-baseline": "central", class: "dm-label" }, g);
+    t.textContent = p.label;
+    parts.push({ lit, g });
+  });
+  return parts;
+}
+
+// The topic box's placeholder writes out example questions, one after another,
+// whenever the box is empty and not being typed in.
+(function typePlaceholders() {
+  if (reduceMotion) return;
+  const base = "What do you want to learn?";
+  const examples = ["How do volcanoes erupt?", "Why is the sky blue?", "How do plants make food from sunlight?", "Why do we have seasons?", "What is inside an atom?", "How does the heart pump blood?"];
+  let i = 0, text = "", deleting = false, hold = 40;
+  setInterval(() => {
+    if (document.activeElement === els.topic || els.topic.value || currentView() !== "home") {
+      els.topic.placeholder = base;
+      text = "";
+      deleting = false;
+      hold = 30;
+      return;
+    }
+    if (hold > 0) { hold--; return; }
+    const target = examples[i % examples.length];
+    if (!deleting) {
+      text = target.slice(0, text.length + 1);
+      if (text === target) { deleting = true; hold = 32; }
+    } else {
+      text = text.slice(0, -1);
+      if (!text) { deleting = false; i++; hold = 5; }
+    }
+    els.topic.placeholder = text;
+  }, 55);
+})();
 
 // ---------- Making a new lesson ----------
 
@@ -86,12 +241,13 @@ els.form.addEventListener("submit", async (e) => {
   els.make.disabled = true;
   building = true;
   started = false;
-  showBuild();
+  showBuild(topic);
+  go("making");
   try {
     const res = await fetch("/api/lesson", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, level: els.level.value }),
+      body: JSON.stringify({ topic, level: document.querySelector('input[name="level"]:checked')?.value || "middle school" }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -102,14 +258,21 @@ els.form.addEventListener("submit", async (e) => {
     if (token === buildToken && !lesson) throw new Error("The lesson didn't arrive. Try again.");
   } catch (err) {
     if (token !== buildToken) return;
-    if (!started) { hideBuild(); showMessage("That didn’t work."); }
-    els.askError.textContent = location.protocol === "file:"
+    const message = location.protocol === "file:"
       ? "Open this page through the server: run npm start, then go to http://localhost:3000"
       : err.message;
+    if (!started) buildFailed(message);
+    else els.status.textContent = message;
   } finally {
     building = false;
     els.make.disabled = false;
-    updateTitle();
+    if (token === buildToken) {
+      // Stop the clock but leave any "Starting in…" countdown running.
+      tickMaking();
+      clearInterval(makingState?.timer);
+      updateTitle();
+      updateHomeBuilding();
+    }
     refreshSaved();
   }
 });
@@ -125,7 +288,7 @@ function onBuildEvent(ev) {
     ready = lesson.scenes.map(() => false);
     sceneIndex = 0;
     buildScript();
-    renderDots();
+    updateSceneCount();
     updateButtons();
     updateTitle();
   } else if (ev.type === "progress") {
@@ -135,9 +298,9 @@ function onBuildEvent(ev) {
     ready[ev.index] = true;
     preload(ev.index);
     buildStep(ev.index, "ready");
-    renderDots();
+    updateSceneCount();
     updateTitle();
-    if (!started && ev.index === 0) startLesson();
+    if (!started && ev.index === 0) showReady();
     else if (waitingFor === ev.index) { waitingFor = -1; renderScene(ev.index); play(); }
   } else if (ev.type === "done") {
     lesson.cost = ev.cost;
@@ -167,53 +330,92 @@ async function* readLines(body) {
 }
 
 function startLesson() {
+  stopCountdown();
   started = true;
-  hideBuild();
+  updateHomeBuilding();
+  go("lesson", { replace: currentView() === "making" });
+  updateTitle();
   renderScene(0);
   play();
 }
+els.startLesson.addEventListener("click", () => { unlockAudio(); startLesson(); });
 
 // ---------- Saved lessons ----------
 
-// The lesson gallery: the sample first, then lessons you've made, newest first.
+// The lesson gallery: one row of four, the sample first, then your newest lessons.
+// "See all" opens the rest. With fewer than three lessons, topic ideas fill the row.
 async function refreshSaved() {
-  const data = await fetch("/api/lessons").then((r) => r.json()).catch(() => null);
+  const [data, sample] = await Promise.all([
+    fetch("/api/lessons").then((r) => r.json()).catch(() => null),
+    sampleSummary || fetch(`${SAMPLE}lesson.json`).then((r) => r.json()).then(summarize).catch(() => null),
+  ]);
+  sampleSummary = sample;
+  const lessons = data?.lessons || [];
   els.saved.innerHTML = "";
-  els.saved.append(lessonCard({ title: "How Volcanoes Erupt", thumb: `${SAMPLE}scene-4.jpg`, meta: "Works without an API key", folder: SAMPLE, sample: true }));
-  for (const item of (data?.lessons || []).slice(0, 12)) {
-    const when = item.createdAt ? new Date(item.createdAt) : null;
-    const meta = [item.scenes ? `${item.scenes} scenes` : "", when ? when.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""].filter(Boolean).join(" · ");
-    els.saved.append(lessonCard({ title: item.title, thumb: item.thumb, meta, folder: `/lessons/${item.id}/` }));
+  els.saved.append(lessonCard({
+    ...(sample || { title: "How Volcanoes Erupt" }),
+    thumb: `${SAMPLE}scene-4.jpg`, folder: SAMPLE, sample: true,
+  }));
+  for (const item of galleryOpen ? lessons : lessons.slice(0, GALLERY_SLOTS)) {
+    els.saved.append(lessonCard({ ...item, folder: `/lessons/${item.id}/` }));
   }
+  const ideas = [...document.querySelectorAll(".idea")].map((b) => b.textContent);
+  for (const idea of ideas.slice(0, Math.max(0, GALLERY_SLOTS - lessons.length))) els.saved.append(ideaCard(idea));
+
+  const seeAll = $("#see-all");
+  seeAll.hidden = lessons.length <= GALLERY_SLOTS;
+  seeAll.textContent = galleryOpen ? "Show fewer" : `See all ${lessons.length + 1} lessons →`;
+  seeAll.setAttribute("aria-expanded", String(galleryOpen));
+}
+$("#see-all").addEventListener("click", () => { galleryOpen = !galleryOpen; refreshSaved(); });
+
+// The same summary the server sends for saved lessons, worked out from a lesson file.
+function summarize(l) {
+  const seconds = l.scenes.reduce((sum, s) => sum + (s.speech || []).reduce((a, c) => a + (c.duration || 0), 0), 0);
+  return { title: l.title, topic: l.topic || "", level: l.level || "", scenes: l.scenes.length, listenMinutes: seconds ? Math.max(1, Math.round(seconds / 60)) : null, costUsd: l.cost?.usd ?? null };
 }
 
-function lessonCard({ title, thumb, meta, folder, sample }) {
+const LEVEL_NAMES = { "elementary school": "Elementary", "middle school": "Middle school", "high school": "High school", college: "College" };
+
+function lessonCard({ title, topic, level, scenes, listenMinutes, createdAt, costUsd, thumb, folder, sample }) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "lesson-card" + (sample ? " sample" : "");
-  const pic = document.createElement("span");
-  pic.className = "lesson-card-pic";
-  if (thumb) {
-    const img = document.createElement("img");
-    img.src = thumb;
-    img.alt = "";
-    img.loading = "lazy";
-    pic.append(img);
-  }
-  if (sample) {
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = "Sample";
-    pic.append(badge);
-  }
-  const t = document.createElement("span");
-  t.className = "lesson-card-title";
-  t.textContent = title;
-  const m = document.createElement("span");
-  m.className = "lesson-card-meta";
-  m.textContent = meta;
-  b.append(pic, t, m);
+  b.setAttribute("aria-label", `Play ${title}`);
+  b.innerHTML = `
+    <span class="lesson-card-pic">${thumb ? `<img alt="" loading="lazy">` : ""}${sample ? `<span class="badge">Sample</span>` : ""}<span class="card-play" aria-hidden="true">&#9654;</span></span>
+    <span class="lesson-card-body">
+      <span class="lesson-card-title"></span>
+      <span class="lesson-card-topic"></span>
+      <span class="lesson-card-tags"></span>
+      <span class="lesson-card-meta"></span>
+    </span>`;
+  if (thumb) b.querySelector("img").src = thumb;
+  b.querySelector(".lesson-card-title").textContent = title;
+  const t = b.querySelector(".lesson-card-topic");
+  if (topic) t.textContent = `“${topic}”`; else t.remove();
+  const tags = [LEVEL_NAMES[level] || "", scenes ? `${scenes} scenes` : "", listenMinutes ? `${listenMinutes} min` : ""].filter(Boolean);
+  b.querySelector(".lesson-card-tags").append(...tags.map((x) => Object.assign(document.createElement("span"), { textContent: x })));
+  const when = createdAt ? new Date(createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const cost = costUsd ? `${Math.max(1, Math.round(costUsd * 100))}¢ of API credit` : "";
+  b.querySelector(".lesson-card-meta").textContent = sample ? "Works without an API key" : [when, cost].filter(Boolean).join(" · ");
   b.addEventListener("click", () => openLesson(folder));
+  return b;
+}
+
+// A topic you haven't made yet: one click puts it in the topic box.
+function ideaCard(topic) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lesson-card idea-card";
+  b.innerHTML = `<span class="idea-plus" aria-hidden="true">+</span><span class="lesson-card-title"></span><span class="lesson-card-meta">Make this lesson</span>`;
+  b.querySelector(".lesson-card-title").textContent = topic;
+  b.addEventListener("click", () => {
+    els.topic.value = topic;
+    els.askError.textContent = "";
+    window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+    els.make.focus({ preventScroll: true });
+  });
   return b;
 }
 
@@ -236,6 +438,8 @@ async function openLesson(folder) {
     resetPlayer();
     buildToken++;
     building = false;
+    hideBuild();
+    makingState = null;
     lesson = normalize(data);
     base = folder;
     ready = lesson.scenes.map(() => true);
@@ -256,7 +460,7 @@ function resetPlayer() {
   sceneIndex = 0;
   waitingFor = -1;
   updateTitle();
-  renderDots();
+  updateSceneCount();
   updateButtons();
 }
 
@@ -278,30 +482,38 @@ function preload(i) {
   for (const clip of s.speech || []) fetch(media(clip.src)).catch(() => {});
 }
 
+// The lesson's title in the control bar, a "still making" note beside the scene count while
+// scenes are being made, and what the lesson cost under the player.
 function updateTitle() {
-  els.title.textContent = "";
-  if (!lesson) return;
+  els.title.textContent = lesson?.title || "";
   const left = ready.filter((r) => !r).length;
-  const note = document.createElement("span");
-  note.className = "title-note";
-  if (building && left && started) note.textContent = `still making ${left} scene${left > 1 ? "s" : ""}…`;
-  else if (lesson.cost && lesson.seconds) {
+  els.buildNote.textContent = lesson && building && left && started ? ` \u00b7 still making ${left} scene${left > 1 ? "s" : ""}\u2026` : "";
+  let note = "";
+  if (lesson?.cost && lesson.seconds) {
     const cents = lesson.cost.usd * 100;
-    note.textContent = `made in ${Math.floor(lesson.seconds / 60)}:${String(lesson.seconds % 60).padStart(2, "0")} for about ${cents < 1 ? cents.toFixed(1) : Math.round(cents)}¢ of API credit`;
+    note = `Made in ${Math.floor(lesson.seconds / 60)}:${String(lesson.seconds % 60).padStart(2, "0")} for about ${cents < 1 ? cents.toFixed(1) : Math.round(cents)}\u00a2 of API credit.`;
   }
-  els.title.append(lesson.title, note);
+  els.lessonNote.textContent = note;
 }
 
-// ---------- Build panel: each Meta model's step, live ----------
+// ---------- Making a lesson: each Meta model's step, live ----------
 
 const STEP_TEXT = {
   waiting: "Waiting for the script",
   painting: "Muse Image is painting",
-  repainting: "Not clear enough, so Muse Image is repainting",
+  repainting: "Repainting it more clearly",
   painted: "Muse Spark is finding the parts",
   looking: "Muse Spark is finding the parts",
-  tracing: "SAM 3.1 is tracing the outlines",
+  tracing: "SAM 3.1 is tracing outlines",
   ready: "Ready",
+};
+const STEP_ORDER = ["waiting", "painting", "painted", "looking", "tracing", "ready"];
+const ICONS = {
+  script: '<path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/>',
+  paint: '<path d="M18 3l3 3-9 9-3-3z"/><path d="M9 12c-3 0-5 2-5 5 0 1-1 2-2 2 2 2 7 2 9-1 1-2 1-4-2-6z"/>',
+  find: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  trace: '<path d="M5 9c0-3 3-5 7-5s7 2 7 5-3 5-7 5c-2 0-3 1-3 2" stroke-dasharray="3 2.5"/><circle cx="9" cy="18.5" r="2"/>',
+  voice: '<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>',
 };
 const PIPELINE = [
   ["script", "Muse Spark", "writes the lesson"],
@@ -310,48 +522,57 @@ const PIPELINE = [
   ["trace", "SAM 3.1", "traces the outlines"],
   ["voice", "Kokoro", "records the narration"],
 ];
-const STEP_ORDER = ["waiting", "painting", "painted", "looking", "tracing", "ready"];
-let buildTimer = null;
 
-function showBuild() {
-  showMessage("");
-  els.heading.textContent = "";
+function showBuild(topic) {
+  stopCountdown();
+  clearInterval(makingState?.timer);
+  makingState = { topic, started: Date.now(), timer: 0, countdown: 0 };
+  els.makingTitle.textContent = topic;
+  els.makingStage.textContent = "Muse Spark is writing the script, a picture plan for every scene, and a quiz…";
+  els.makingReady.hidden = true;
+  els.makingError.hidden = true;
+  els.makingBg.innerHTML = "";
   const steps = PIPELINE.filter(([k]) => k !== "voice" || serverVoice);
-  els.build.innerHTML = `
-    <p class="build-title chalk">Making your lesson <span class="build-time">0:00</span></p>
-    <p class="build-stage">Muse Spark is writing the script, the pictures it needs, and a quiz…</p>
-    <ol class="pipeline">${steps.map(([k, who, what]) => `<li data-k="${k}"><b>${who}</b><span>${what}</span></li>`).join("")}</ol>
-    <ol class="film">${Array.from({ length: 5 }, () => `<li class="shot pending"><div class="shot-img"></div><p class="shot-head">&nbsp;</p><p class="shot-step">&nbsp;</p></li>`).join("")}</ol>`;
+  els.pipeline.innerHTML = steps.map(([k, who, what]) => `<li data-k="${k}"><span class="station"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg></span><b>${who}</b><small>${what}</small></li>`).join("");
+  els.film.innerHTML = Array.from({ length: 5 }, (_, i) => `<li class="shot"><div class="shot-img"><span class="shot-num">${i + 1}</span></div><p class="shot-head"></p><p class="shot-step"></p></li>`).join("");
   updatePipeline();
-  els.build.hidden = false;
-  const t0 = Date.now();
-  clearInterval(buildTimer);
-  buildTimer = setInterval(() => {
-    const s = Math.round((Date.now() - t0) / 1000);
-    const t = els.build.querySelector(".build-time");
-    if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  }, 1000);
+  tickMaking();
+  makingState.timer = setInterval(tickMaking, 1000);
+}
+
+// Once a second: the clock, and a progress bar that keeps creeping while the script is written.
+function tickMaking() {
+  if (!makingState) return;
+  const s = Math.round((Date.now() - makingState.started) / 1000);
+  els.makingTime.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const shots = [...els.film.querySelectorAll(".shot[data-step]")].map((li) => STEP_ORDER.indexOf(li.dataset.step === "repainting" ? "painting" : li.dataset.step));
+  const progress = !lesson || !shots.length
+    ? 0.16 * (1 - Math.exp(-s / 18))
+    : 0.18 + 0.82 * (shots.reduce((a, r) => a + Math.max(0, r), 0) / (shots.length * 5));
+  els.makingBar.style.width = `${Math.max(2, Math.round(progress * 100))}%`;
+  els.makingBar.parentElement.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
 }
 
 function buildScript() {
-  els.build.querySelector(".build-stage").textContent = `“${lesson.title}”: every scene is now being painted, studied and traced at the same time.`;
-  const film = els.build.querySelector(".film");
-  film.innerHTML = "";
+  els.makingTitle.textContent = lesson.title;
+  els.makingStage.textContent = `All ${lesson.scenes.length} scenes are being painted, checked and traced at the same time.`;
+  els.film.innerHTML = "";
   lesson.scenes.forEach((s, i) => {
     const li = document.createElement("li");
     li.className = "shot";
     li.dataset.step = "waiting";
-    li.innerHTML = `<div class="shot-img"></div><p class="shot-head"></p><p class="shot-step"></p>`;
-    li.querySelector(".shot-head").textContent = `${i + 1}. ${s.heading}`;
+    li.innerHTML = `<div class="shot-img"><span class="shot-num">${i + 1}</span></div><p class="shot-head"></p><p class="shot-step"></p>`;
+    li.querySelector(".shot-head").textContent = s.heading;
     li.querySelector(".shot-step").textContent = STEP_TEXT.waiting;
-    film.append(li);
+    els.film.append(li);
   });
   updatePipeline();
+  tickMaking();
 }
 
 // Light up whichever models are working right now, and tick off the ones that are done.
 function updatePipeline() {
-  const steps = [...els.build.querySelectorAll(".shot[data-step]")].map((s) => STEP_ORDER.indexOf(s.dataset.step === "repainting" ? "painting" : s.dataset.step));
+  const steps = [...els.film.querySelectorAll(".shot[data-step]")].map((s) => STEP_ORDER.indexOf(s.dataset.step === "repainting" ? "painting" : s.dataset.step));
   const all = (min) => steps.length > 0 && steps.every((r) => r >= min);
   const any = (lo, hi) => steps.some((r) => r >= lo && r <= hi);
   const state = {
@@ -361,15 +582,17 @@ function updatePipeline() {
     trace: all(5) ? "done" : any(4, 4) ? "now" : "",
     voice: !lesson ? "" : all(5) ? "done" : "now",
   };
-  for (const li of els.build.querySelectorAll(".pipeline li")) li.className = state[li.dataset.k];
+  for (const li of els.pipeline.querySelectorAll("li")) li.className = state[li.dataset.k];
 }
 
 function buildStep(i, step, src) {
-  const li = els.build.querySelectorAll(".shot")[i];
+  const li = els.film.querySelectorAll(".shot")[i];
   if (!li) return;
   li.dataset.step = step;
   li.querySelector(".shot-step").textContent = STEP_TEXT[step] || step;
   updatePipeline();
+  tickMaking();
+  updateHomeBuilding();
   if (src) {
     // A repainted picture replaces the first one.
     let img = li.querySelector("img");
@@ -380,13 +603,69 @@ function buildStep(i, step, src) {
       li.querySelector(".shot-img").append(img);
     }
     img.src = media(src);
+    paintBackground(media(src));
   }
 }
 
+// The newest painting glows softly behind the making screen.
+function paintBackground(src) {
+  const img = new Image();
+  img.alt = "";
+  img.onload = () => {
+    els.makingBg.append(img);
+    requestAnimationFrame(() => img.classList.add("on"));
+    const old = [...els.makingBg.querySelectorAll("img")].slice(0, -2);
+    old.forEach((o) => o.remove());
+  };
+  img.src = src;
+}
+
+// Scene 1 is ready: offer to start, and start by itself after a short countdown.
+function showReady() {
+  if (!makingState || started) return;
+  els.makingReady.hidden = false;
+  els.makingStage.textContent = "Scene 1 is ready. The rest will keep being made while you watch.";
+  if (currentView() !== "making") return;
+  let n = 3;
+  const tick = () => {
+    if (n <= 0) { stopCountdown(); startLesson(); return; }
+    els.startCount.textContent = `Starting in ${n}…`;
+    n--;
+  };
+  stopCountdown();
+  tick();
+  makingState.countdown = setInterval(tick, 1000);
+}
+
+function stopCountdown() {
+  if (!makingState) return;
+  clearInterval(makingState.countdown);
+  makingState.countdown = 0;
+  els.startCount.textContent = "Or keep watching the rest being made.";
+}
+
+function buildFailed(message) {
+  stopCountdown();
+  clearInterval(makingState?.timer);
+  els.makingReady.hidden = true;
+  els.makingError.hidden = false;
+  els.makingErrorText.textContent = message;
+  els.makingStage.textContent = "Something went wrong while making this lesson.";
+}
+
 function hideBuild() {
-  clearInterval(buildTimer);
-  els.build.hidden = true;
-  els.build.innerHTML = "";
+  clearInterval(makingState?.timer);
+  stopCountdown();
+}
+
+// While a lesson is being made and you're back on the home screen, show how it's going.
+function updateHomeBuilding() {
+  const el = els.homeBuilding;
+  if (!building || !makingState || started) { el.hidden = true; return; }
+  const done = ready.filter(Boolean).length;
+  el.hidden = false;
+  el.innerHTML = `<span><span class="pulse-dot live"></span><span>Making <b></b> &middot; ${lesson ? `${done} of ${lesson.scenes.length} scenes ready` : "writing the script"}</span><span class="go">${done ? "Start it" : "Watch"} &rarr;</span></span>`;
+  el.querySelector("b").textContent = `“${lesson?.title || makingState.topic}”`;
 }
 
 function showMessage(text) {
@@ -407,6 +686,7 @@ function renderScene(i) {
   void els.heading.offsetWidth;
   els.heading.classList.add("write");
   els.status.textContent = "";
+  els.transcript.textContent = scene.narration;
   renderCaption(scene.narration);
   clearBoard();
 
@@ -417,21 +697,35 @@ function renderScene(i) {
   }
   marks = sceneMarks(scene);
   sentenceAt = 0;
-  renderDots();
+  updateSceneCount();
   updateButtons();
 }
+
+// The caption under the board works like subtitles: only the sentence being spoken is shown.
+let shownSentence = -1;
 
 function renderCaption(text) {
   els.caption.innerHTML = "";
   words = [];
+  shownSentence = -1;
+  let sentence = 0;
   for (const m of text.matchAll(/\S+/g)) {
     const span = document.createElement("span");
     span.className = "word";
     span.textContent = m[0];
     els.caption.append(span, " ");
-    words.push({ el: span, start: m.index, end: m.index + m[0].length, norm: norm(m[0]) });
+    words.push({ el: span, start: m.index, end: m.index + m[0].length, norm: norm(m[0]), sentence });
+    if (/[.!?]["')\]]*$/.test(m[0])) sentence++;
   }
   activeMark = null;
+  showSentence(0);
+}
+
+function showSentence(idx) {
+  const n = words[Math.min(Math.max(idx, 0), words.length - 1)]?.sentence ?? 0;
+  if (n === shownSentence) return;
+  shownSentence = n;
+  for (const w of words) w.el.classList.toggle("off", w.sentence !== n);
 }
 
 // When each part should appear: at its trigger word. A part whose trigger isn't in the
@@ -469,6 +763,7 @@ function markProgress(idx) {
     w.el.classList.toggle("spoken", i < idx);
     w.el.classList.toggle("current", i === idx);
   });
+  showSentence(idx);
   let latest = null;
   for (const m of marks) {
     if (m.wordIndex > idx) continue;
@@ -486,7 +781,6 @@ function wordAt(charIndex) {
 
 function clearBoard() {
   board = null;
-  els.sample.hidden = true; // the empty board's "Play the sample lesson" button is only for the first visit
   els.picture.toggleAttribute("hidden", true);
   els.picture.innerHTML = "";
   els.picture.classList.remove("on");
@@ -580,49 +874,18 @@ function drawPicture(scene) {
 
   requestAnimationFrame(() => root.classList.add("on"));
 
-  // A slow camera move toward the part being explained, and back out at the end of the scene.
-  let view = [0, 0, W, H];
-  let viewRun = 0;
-  const moveView = (to, ms) => {
-    const from = view.slice();
-    const run = ++viewRun;
-    tween(reduceMotion ? 0 : ms, (t) => {
-      if (run !== viewRun || board !== self) return;
-      const e = easeInOut(t);
-      view = from.map((v, i) => v + (to[i] - v) * e);
-      root.setAttribute("viewBox", view.map((v) => Math.round(v * 10) / 10).join(" "));
-    });
-  };
-  const focus = (k) => {
-    const box = shapes[k]?.box;
-    if (!box) return;
-    const [l, t, r, b] = box;
-    // Big parts already fill the board; keep the whole picture in view for them.
-    if (r - l > W * 0.7 || b - t > H * 0.7) { moveView([0, 0, W, H], 1600); return; }
-    const w = W * 0.82, h = H * 0.82;
-    // Lean toward the part rather than centring it, so the move stays gentle.
-    const fx = W / 2 + ((l + r) / 2 - W / 2) * 0.75, fy = H / 2 + ((t + b) / 2 - H / 2) * 0.75;
-    moveView([Math.max(0, Math.min(W - w, fx - w / 2)), Math.max(0, Math.min(H - h, fy - h / 2)), w, h], 1600);
-  };
-
   const self = {
     isRevealed: (k) => !!parts[k]?.revealed,
     reveal: (k) => revealPart(self, parts[k], tip),
-    activate: (k) => {
-      parts.forEach((p) => {
-        p.outline?.classList.toggle("active", p.k === k);
-        p.label?.group.classList.toggle("active", p.k === k);
-      });
-      focus(k);
-    },
-    // After a raised-hand answer: nothing highlighted, whole picture in view.
-    reset: () => {
-      parts.forEach((p) => {
-        p.outline?.classList.remove("active", "pulse");
-        p.label?.group.classList.remove("active", "pulse");
-      });
-      moveView([0, 0, W, H], 1200);
-    },
+    activate: (k) => parts.forEach((p) => {
+      p.outline?.classList.toggle("active", p.k === k);
+      p.label?.group.classList.toggle("active", p.k === k);
+    }),
+    // After a raised-hand answer: nothing highlighted.
+    reset: () => parts.forEach((p) => {
+      p.outline?.classList.remove("active", "pulse");
+      p.label?.group.classList.remove("active", "pulse");
+    }),
     // "Find it": show the whole picture with no labels, and test where the student tapped.
     showAll: () => full.classList.add("on"),
     hitTest: (clientX, clientY, target) => {
@@ -661,7 +924,6 @@ function drawPicture(scene) {
       parts.forEach((p) => { if (!p.revealed) revealPart(self, p, tip, true); });
       full.classList.add("on");
       parts.forEach((p) => p.outline?.classList.add("rest"));
-      moveView([0, 0, W, H], 1800);
     },
   };
   return self;
@@ -755,8 +1017,8 @@ function drawLabel(layer, text, spot, shape, k, id, defs) {
 
 // Place each label near its part, inside the board, clear of the heading, the other parts,
 // and the labels already placed. Very large parts get their label written on top of them.
-function layoutLabels(parts, shapes, W, H) {
-  const fontSize = Math.round(W * 0.03);
+function layoutLabels(parts, shapes, W, H, scale = 1) {
+  const fontSize = Math.round(W * 0.03 * scale);
   const h = Math.round(fontSize * 1.25);
   const margin = Math.round(W * 0.015);
   const heading = [0, 0, W * 0.62, H * 0.15];
@@ -1163,6 +1425,49 @@ els.play.addEventListener("click", () => {
   play();
 });
 els.prev.addEventListener("click", () => goTo(sceneIndex - 1));
+
+// Speed, subtitles and transcript.
+const SPEEDS = [[1, "1×", "normal"], [1.15, "1.15×", "faster"], [0.85, "0.85×", "slower"]];
+els.speed.addEventListener("click", () => {
+  const at = SPEEDS.findIndex(([r]) => r === Number(els.rate.value));
+  const [rate, , name] = SPEEDS[(at + 1) % SPEEDS.length];
+  setRate(rate);
+  els.speed.setAttribute("aria-label", `Speed: ${name}`);
+});
+els.rate.addEventListener("input", () => setRate(Number(els.rate.value)));
+function setRate(rate) {
+  els.rate.value = String(rate);
+  player.playbackRate = rate;
+  const match = SPEEDS.find(([r]) => r === rate);
+  els.speed.textContent = match ? match[1] : `${rate}×`;
+}
+els.cc.addEventListener("click", () => {
+  const on = els.cc.getAttribute("aria-pressed") !== "true";
+  els.cc.setAttribute("aria-pressed", String(on));
+  els.caption.hidden = !on;
+});
+// Full screen shows just the player: board, subtitles and controls, like a video.
+els.fullscreen.addEventListener("click", toggleFullscreen);
+function toggleFullscreen() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) exitFullscreen();
+  else (els.player.requestFullscreen || els.player.webkitRequestFullscreen)?.call(els.player)?.catch?.(() => {});
+}
+function exitFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+}
+for (const event of ["fullscreenchange", "webkitfullscreenchange"]) {
+  document.addEventListener(event, () => {
+    const on = (document.fullscreenElement || document.webkitFullscreenElement) === els.player;
+    els.fullscreen.setAttribute("aria-pressed", String(on));
+    els.fullscreen.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+  });
+}
+els.transcriptBtn.addEventListener("click", () => {
+  const on = els.transcript.hidden;
+  els.transcript.hidden = !on;
+  els.transcriptBtn.setAttribute("aria-pressed", String(on));
+});
 els.next.addEventListener("click", () => (finding ? skipRound() : goTo(sceneIndex + 1)));
 els.replay.addEventListener("click", () => goTo(sceneIndex));
 
@@ -1177,33 +1482,30 @@ function goTo(i) {
   play();
 }
 
-function renderDots() {
-  els.dots.innerHTML = "";
-  if (!lesson) return;
-  lesson.scenes.forEach((s, i) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "dot" + (i === sceneIndex ? " on" : "") + (ready[i] ? "" : " pending");
-    b.setAttribute("aria-label", `Scene ${i + 1}: ${s.heading || ""}${ready[i] ? "" : " (still being made)"}`);
-    if (i === sceneIndex) b.setAttribute("aria-current", "step");
-    b.addEventListener("click", () => goTo(i));
-    els.dots.append(b);
-  });
+// "Scene 2 of 5" beside the controls.
+function updateSceneCount() {
+  if (finding) return;
+  const scene = lesson?.scenes[sceneIndex];
+  els.sceneCount.textContent = scene && started ? `Scene ${sceneIndex + 1} of ${lesson.scenes.length}` : "";
+  els.sceneCount.title = scene?.heading || "";
 }
 
 function updateButtons() {
   const has = !!lesson && started;
   els.play.disabled = !has;
-  els.play.textContent = playing ? "Pause" : finding ? "Start over" : "Play";
+  els.play.classList.toggle("is-playing", playing);
+  els.play.setAttribute("aria-label", playing ? "Pause" : finding ? "Start over" : "Play");
   els.prev.disabled = !has || sceneIndex === 0;
   els.next.disabled = !has || (!finding && sceneIndex >= lesson.scenes.length - 1);
-  els.next.textContent = finding ? "Skip" : "Next";
+  els.next.setAttribute("aria-label", finding ? "Skip" : "Next scene");
+  els.next.title = finding ? "Skip" : "Next scene (→)";
   els.replay.disabled = !has;
   els.hand.disabled = !has || !ready[sceneIndex] || !!finding;
 }
 
 // Keyboard: Space plays or pauses, arrows change scene, H raises your hand.
 document.addEventListener("keydown", (e) => {
+  if (currentView() !== "lesson") return;
   if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   // While listening, Space or Enter means "I'm done asking".
   if (rec && (e.key === " " || e.key === "Enter")) {
@@ -1216,6 +1518,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowRight") press(els.next);
   else if (e.key === "ArrowLeft") press(els.prev);
   else if (e.key === "h" || e.key === "H") press(els.hand);
+  else if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFullscreen(); }
 });
 
 // ---------- Find it: tap the parts on the picture ----------
@@ -1254,8 +1557,8 @@ async function showRound() {
     board = drawPicture(scene);
     board.showAll();
     els.board.classList.add("finding");
-    els.dots.hidden = true; // the round's pictures come from different scenes; the heading counts rounds instead
     els.heading.textContent = `Find it · ${f.at + 1} of ${f.rounds.length}`;
+    els.sceneCount.textContent = `Find it · ${f.at + 1} of ${f.rounds.length}`;
     els.status.textContent = "";
     renderCaption(findPrompt(label));
     marks = [];
@@ -1315,7 +1618,7 @@ function endFinding() {
   if (!finding) return;
   finding = null;
   els.board.classList.remove("finding");
-  els.dots.hidden = false;
+  updateSceneCount();
   updateButtons();
 }
 
@@ -1324,6 +1627,7 @@ function endFinding() {
 function showQuiz() {
   const q = lesson.quiz;
   if (!q || !Array.isArray(q.choices)) return;
+  exitFullscreen(); // the quiz sits below the player
   els.quiz.innerHTML = "";
   const h = document.createElement("h3");
   h.textContent = "Check what you learned";
@@ -1437,7 +1741,7 @@ async function continueLesson() {
 function setHandButton(listening) {
   els.hand.setAttribute("aria-pressed", String(listening));
   els.hand.classList.toggle("listening", listening);
-  els.hand.innerHTML = listening ? `<span aria-hidden="true">●</span> Done asking` : `<span aria-hidden="true">✋</span> Raise hand`;
+  els.hand.innerHTML = listening ? `<span aria-hidden="true">●</span> Done asking` : `<span aria-hidden="true">✋</span> Ask a question <kbd>H</kbd>`;
 }
 
 // The chalk bubble on the board shows what the raised hand is doing:
