@@ -295,6 +295,7 @@ function onBuildEvent(ev) {
   if (ev.type === "script") {
     if (sentPhoto && attachedPhoto === sentPhoto) clearPhoto();
     sentPhoto = null;
+    if (ev.lesson?.id) rememberLesson(ev.lesson.id);
     lesson = normalize(ev.lesson);
     base = ev.base;
     ready = lesson.scenes.map(() => false);
@@ -356,9 +357,20 @@ els.startLesson.addEventListener("click", () => { unlockAudio(); startLesson(); 
 
 // The lesson gallery: one row of four, the sample first, then your newest lessons.
 // "See all" opens the rest. With fewer than three lessons, topic ideas fill the row.
+// The lessons made in this browser. On a public server the gallery shows only these
+// (plus featured ones), so visitors don't see each other's lessons.
+const MINE_KEY = "chalk-talk-my-lessons";
+function myLessons() {
+  try { return JSON.parse(localStorage.getItem(MINE_KEY) || "[]").filter((id) => typeof id === "string"); } catch { return []; }
+}
+function rememberLesson(id) {
+  try { localStorage.setItem(MINE_KEY, JSON.stringify([id, ...myLessons().filter((x) => x !== id)].slice(0, 50))); } catch {}
+}
+
 async function refreshSaved() {
+  const mine = myLessons();
   const [data, sample] = await Promise.all([
-    fetch("/api/lessons").then((r) => r.json()).catch(() => null),
+    fetch(`/api/lessons${mine.length ? `?mine=${encodeURIComponent(mine.join(","))}` : ""}`).then((r) => r.json()).catch(() => null),
     sampleSummary || fetch(`${SAMPLE}lesson.json`).then((r) => r.json()).then(summarize).catch(() => null),
   ]);
   sampleSummary = sample;
