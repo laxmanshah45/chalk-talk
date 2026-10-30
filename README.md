@@ -2,6 +2,8 @@
 
 An animated tutor built on Meta Model API for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026). Every line in this repository was written during the hackathon.
 
+**Demo video (3 min):** https://youtu.be/hLgwl60q20I
+
 You type a topic. Chalk Talk paints a chalk picture for every scene of the lesson, then talks you through it: each part of the picture is traced in chalk, coloured in, and labelled at the moment the narration mentions it. Raise your hand at any time to ask a question out loud; when you pause, the tutor knows you're done and answers while pointing at the picture. At the end, a "Find it" round asks you to tap parts on the pictures, then a quick question checks understanding.
 
 **Snap your textbook:** drop a photo of a textbook diagram on the home page (or paste one, or click the camera), optionally ask a question about it, and Chalk Talk teaches a lesson about *your* picture. SAM 3.1 traces the real parts on your photo, and Muse Spark has a new chalk drawing painted only for scenes the photo can't show.
